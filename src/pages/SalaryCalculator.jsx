@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Calculator, Download, Printer, ChevronDown, ChevronUp, IndianRupee } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Calculator, Download, Printer, ChevronDown, ChevronUp, IndianRupee, Package } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import EmptyState from '../components/Common/EmptyState.jsx';
-import { calculateSalary, formatCurrency, formatMonthLabel, currentMonthKey } from '../utils/calculations.js';
+import { calculateSalary, formatCurrency, formatMonthLabel, currentMonthKey, LACE_RATES } from '../utils/calculations.js';
 import { downloadCSV, printElement } from '../utils/exportUtils.js';
 
 function SalarySlip({ report, settings, companyName }) {
@@ -19,6 +19,8 @@ function SalarySlip({ report, settings, companyName }) {
         <div><span className="text-gray-500">Designation:</span> <span className="font-semibold">{report.role}</span></div>
         <div><span className="text-gray-500">Monthly Salary:</span> <span className="font-semibold">{formatCurrency(report.monthlySalary)}</span></div>
       </div>
+
+      {/* Attendance days */}
       <table className="w-full text-xs border border-gray-200 mb-4">
         <thead><tr className="bg-gray-100"><th className="text-left px-3 py-2 border-r border-gray-200">Particulars</th><th className="text-right px-3 py-2">Days / Amount</th></tr></thead>
         <tbody>
@@ -39,14 +41,33 @@ function SalarySlip({ report, settings, companyName }) {
           ))}
         </tbody>
       </table>
+
+      {/* Earnings */}
       <table className="w-full text-xs border border-gray-200 mb-4">
         <thead><tr className="bg-gray-100"><th className="text-left px-3 py-2 border-r border-gray-200">Earnings</th><th className="text-right px-3 py-2">Amount</th></tr></thead>
         <tbody>
           <tr className="border-t border-gray-100"><td className="px-3 py-1.5 border-r border-gray-200">Daily Salary</td><td className="px-3 py-1.5 text-right">{formatCurrency(report.dailySalary)}</td></tr>
-          <tr className="border-t border-gray-100"><td className="px-3 py-1.5 border-r border-gray-200">Gross Salary</td><td className="px-3 py-1.5 text-right font-semibold">{formatCurrency(report.grossSalary)}</td></tr>
+          <tr className="border-t border-gray-100"><td className="px-3 py-1.5 border-r border-gray-200">Gross Salary (Paid Days × Daily Rate)</td><td className="px-3 py-1.5 text-right font-semibold">{formatCurrency(report.grossSalary)}</td></tr>
           <tr className="border-t border-gray-100"><td className="px-3 py-1.5 border-r border-gray-200">Overtime ({report.overtimeHours} hrs)</td><td className="px-3 py-1.5 text-right">+ {formatCurrency(report.overtimeAmount)}</td></tr>
+          {/* Lace packing */}
+          {(report.type1Packets > 0 || report.type2Packets > 0) && <>
+            <tr className="border-t border-gray-100 bg-blue-50">
+              <td className="px-3 py-1.5 border-r border-gray-200">Flat Lace Packing ({report.type1Packets} pkts × ₹{LACE_RATES.type1})</td>
+              <td className="px-3 py-1.5 text-right">+ {formatCurrency(report.type1Amount)}</td>
+            </tr>
+            <tr className="border-t border-gray-100 bg-purple-50">
+              <td className="px-3 py-1.5 border-r border-gray-200">Round Lace Packing ({report.type2Packets} pkts × ₹{LACE_RATES.type2})</td>
+              <td className="px-3 py-1.5 text-right">+ {formatCurrency(report.type2Amount)}</td>
+            </tr>
+            <tr className="border-t border-gray-200 font-semibold">
+              <td className="px-3 py-1.5 border-r border-gray-200">Total Lace Packing</td>
+              <td className="px-3 py-1.5 text-right text-green-600">+ {formatCurrency(report.laceTotal)}</td>
+            </tr>
+          </>}
         </tbody>
       </table>
+
+      {/* Deductions */}
       <table className="w-full text-xs border border-gray-200 mb-4">
         <thead><tr className="bg-gray-100"><th className="text-left px-3 py-2 border-r border-gray-200">Deductions</th><th className="text-right px-3 py-2">Amount</th></tr></thead>
         <tbody>
@@ -55,6 +76,7 @@ function SalarySlip({ report, settings, companyName }) {
           <tr className="border-t border-gray-100"><td className="px-3 py-1.5 border-r border-gray-200">Late Fine</td><td className="px-3 py-1.5 text-right text-red-600">- {formatCurrency(report.lateFine)}</td></tr>
         </tbody>
       </table>
+
       <div className="bg-blue-50 border border-blue-200 rounded p-3 flex justify-between font-bold">
         <span>NET PAYABLE</span>
         <span className="text-blue-700">{formatCurrency(report.finalSalary)}</span>
@@ -67,7 +89,7 @@ function SalarySlip({ report, settings, companyName }) {
   );
 }
 
-function EmployeeRow({ emp, attendance, advances, settings, month }) {
+function EmployeeRow({ emp, attendance, advances, lacePackingRecords, settings, month }) {
   const [expanded, setExpanded] = useState(false);
   const [advDed, setAdvDed] = useState('');
   const [otherDed, setOtherDed] = useState('');
@@ -79,8 +101,17 @@ function EmployeeRow({ emp, attendance, advances, settings, month }) {
   [attendance, emp.id, month]);
 
   const report = useMemo(() =>
-    calculateSalary({ employee: emp, attendanceRecords: empAtt, advances, settings, monthKey: month, otherDeduction: parseFloat(otherDed) || 0, advanceDeductionOverride: parseFloat(advDed) || 0 }),
-  [emp, empAtt, advances, settings, month, otherDed, advDed]);
+    calculateSalary({
+      employee: emp,
+      attendanceRecords: empAtt,
+      advances,
+      lacePackingRecords,
+      settings,
+      monthKey: month,
+      otherDeduction: parseFloat(otherDed) || 0,
+      advanceDeductionOverride: parseFloat(advDed) || 0,
+    }),
+  [emp, empAtt, advances, lacePackingRecords, settings, month, otherDed, advDed]);
 
   const handleFinalise = () => {
     if (parseFloat(advDed) > 0) {
@@ -101,6 +132,12 @@ function EmployeeRow({ emp, attendance, advances, settings, month }) {
             <p className="text-xs text-gray-400">Paid Days</p>
             <p className="font-semibold text-gray-700">{report.paidDays.toFixed(1)} / {settings.totalWorkingDays}</p>
           </div>
+          {report.laceTotal > 0 && (
+            <div className="text-right hidden sm:block">
+              <p className="text-xs text-gray-400">Lace Packing</p>
+              <p className="font-semibold text-green-500">+{formatCurrency(report.laceTotal)}</p>
+            </div>
+          )}
           <div className="text-right">
             <p className="text-xs text-gray-400">Net Payable</p>
             <p className="font-bold text-green-600">{formatCurrency(report.finalSalary)}</p>
@@ -111,7 +148,7 @@ function EmployeeRow({ emp, attendance, advances, settings, month }) {
 
       {expanded && (
         <div className="border-t border-gray-100 p-4 space-y-4">
-          {/* Breakdown */}
+          {/* Attendance breakdown */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               ['Monthly Salary', formatCurrency(report.monthlySalary)],
@@ -133,6 +170,26 @@ function EmployeeRow({ emp, attendance, advances, settings, month }) {
               </div>
             ))}
           </div>
+
+          {/* Lace packing summary */}
+          {(report.type1Packets > 0 || report.type2Packets > 0) && (
+            <div className="grid grid-cols-3 gap-3 bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-center">
+                <p className="text-xs text-blue-500 font-medium">Flat Lace (T1)</p>
+                <p className="font-bold text-blue-700">{report.type1Packets} pkts</p>
+                <p className="text-xs text-blue-600">= {formatCurrency(report.type1Amount)}</p>
+              </div>
+              <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-center">
+                <p className="text-xs text-purple-500 font-medium">Round Lace (T2)</p>
+                <p className="font-bold text-purple-700">{report.type2Packets} pkts</p>
+                <p className="text-xs text-purple-600">= {formatCurrency(report.type2Amount)}</p>
+              </div>
+              <div className="bg-green-100 border border-green-200 rounded-lg p-3 text-center">
+                <p className="text-xs text-green-600 font-medium flex items-center justify-center gap-1"><Package size={11} /> Lace Total</p>
+                <p className="font-bold text-green-700">{formatCurrency(report.laceTotal)}</p>
+              </div>
+            </div>
+          )}
 
           {/* Adjustments */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-orange-50 border border-orange-100 rounded-lg p-4">
@@ -181,7 +238,7 @@ function EmployeeRow({ emp, attendance, advances, settings, month }) {
 }
 
 export default function SalaryCalculator() {
-  const { employees, attendance, advances, settings } = useApp();
+  const { employees, attendance, advances, lacePackingRecords, settings } = useApp();
   const [month, setMonth] = useState(currentMonthKey());
   const [empFilter, setEmpFilter] = useState('all');
 
@@ -193,15 +250,15 @@ export default function SalaryCalculator() {
   const totalPayable = useMemo(() => {
     return displayEmployees.reduce((sum, emp) => {
       const empAtt = attendance.filter((a) => a.employeeId === emp.id && a.date.startsWith(month));
-      const r = calculateSalary({ employee: emp, attendanceRecords: empAtt, advances, settings, monthKey: month });
+      const r = calculateSalary({ employee: emp, attendanceRecords: empAtt, advances, lacePackingRecords, settings, monthKey: month });
       return sum + r.finalSalary;
     }, 0);
-  }, [displayEmployees, attendance, advances, settings, month]);
+  }, [displayEmployees, attendance, advances, lacePackingRecords, settings, month]);
 
   const handleExportCSV = () => {
     const rows = displayEmployees.map((emp) => {
       const empAtt = attendance.filter((a) => a.employeeId === emp.id && a.date.startsWith(month));
-      const r = calculateSalary({ employee: emp, attendanceRecords: empAtt, advances, settings, monthKey: month });
+      const r = calculateSalary({ employee: emp, attendanceRecords: empAtt, advances, lacePackingRecords, settings, monthKey: month });
       return {
         'Employee Code': r.employeeCode,
         'Name': r.employeeName,
@@ -216,6 +273,11 @@ export default function SalaryCalculator() {
         'Absent': r.absentDays,
         'Gross Salary': r.grossSalary.toFixed(2),
         'Overtime': r.overtimeAmount.toFixed(2),
+        'Flat Lace Pkts': r.type1Packets,
+        'Flat Lace Amount': r.type1Amount.toFixed(2),
+        'Round Lace Pkts': r.type2Packets,
+        'Round Lace Amount': r.type2Amount.toFixed(2),
+        'Total Lace': r.laceTotal.toFixed(2),
         'Advance Deduction': r.advanceDeduction.toFixed(2),
         'Other Deduction': r.otherDeduction.toFixed(2),
         'Late Fine': r.lateFine.toFixed(2),
@@ -244,7 +306,7 @@ export default function SalaryCalculator() {
       {/* Total Summary Bar */}
       <div className="bg-blue-600 text-white rounded-xl p-4 flex items-center justify-between">
         <div>
-          <p className="text-blue-200 text-xs font-medium">Total Salary Payable</p>
+          <p className="text-blue-200 text-xs font-medium">Total Salary Payable (incl. Lace Packing)</p>
           <p className="text-2xl font-bold">{formatCurrency(totalPayable)}</p>
           <p className="text-blue-200 text-xs">{formatMonthLabel(month)} · {displayEmployees.length} employee(s)</p>
         </div>
@@ -259,7 +321,8 @@ export default function SalaryCalculator() {
       ) : (
         <div className="space-y-3">
           {displayEmployees.map((emp) => (
-            <EmployeeRow key={emp.id} emp={emp} attendance={attendance} advances={advances} settings={settings} month={month} />
+            <EmployeeRow key={emp.id} emp={emp} attendance={attendance} advances={advances}
+              lacePackingRecords={lacePackingRecords} settings={settings} month={month} />
           ))}
         </div>
       )}

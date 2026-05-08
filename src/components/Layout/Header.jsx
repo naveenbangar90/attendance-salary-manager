@@ -3,13 +3,14 @@ import { Menu, Bell } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
 const titles = {
-  '/':           'Dashboard',
-  '/employees':  'Employees',
-  '/attendance': 'Attendance',
-  '/salary':     'Salary Calculator',
-  '/advances':   'Advance Management',
-  '/reports':    'Reports',
-  '/settings':   'Settings',
+  '/':             'Dashboard',
+  '/employees':    'Employees',
+  '/attendance':   'Attendance',
+  '/lace-packing': 'Lace Packing',
+  '/salary':       'Salary Calculator',
+  '/advances':     'Advance Management',
+  '/reports':      'Reports',
+  '/settings':     'Settings',
 };
 
 export default function Header({ onMenuClick }) {

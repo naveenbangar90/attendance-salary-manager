@@ -1,13 +1,13 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, CalendarCheck, Calculator, CreditCard } from 'lucide-react';
+import { LayoutDashboard, Users, CalendarCheck, Package, Calculator } from 'lucide-react';
 
 const nav = [
-  { to: '/',           label: 'Home',       icon: LayoutDashboard },
-  { to: '/employees',  label: 'Staff',      icon: Users },
-  { to: '/attendance', label: 'Attendance', icon: CalendarCheck },
-  { to: '/salary',     label: 'Salary',     icon: Calculator },
-  { to: '/advances',   label: 'Advance',    icon: CreditCard },
+  { to: '/',             label: 'Home',       icon: LayoutDashboard },
+  { to: '/employees',    label: 'Staff',      icon: Users },
+  { to: '/attendance',   label: 'Attendance', icon: CalendarCheck },
+  { to: '/lace-packing', label: 'Lace',       icon: Package },
+  { to: '/salary',       label: 'Salary',     icon: Calculator },
 ];
 
 export default function BottomNav() {

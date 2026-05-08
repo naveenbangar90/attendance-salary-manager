@@ -31,11 +31,30 @@ export const getAttendanceStats = (records, settings) => {
   };
 };
 
+// Lace packing rates
+export const LACE_RATES = {
+  type1: 75, // Flat lace — ₹75/packet
+  type2: 40, // Round lace — ₹40/packet
+};
+
+// Total lace packing earnings for an employee in a month
+export const getLacePackingEarnings = (laceRecords, employeeId, monthKey) => {
+  const records = laceRecords.filter(
+    (r) => r.employeeId === employeeId && r.date.startsWith(monthKey)
+  );
+  const type1Packets = records.reduce((s, r) => s + (parseFloat(r.type1Packets) || 0), 0);
+  const type2Packets = records.reduce((s, r) => s + (parseFloat(r.type2Packets) || 0), 0);
+  const type1Amount  = type1Packets * LACE_RATES.type1;
+  const type2Amount  = type2Packets * LACE_RATES.type2;
+  return { type1Packets, type2Packets, type1Amount, type2Amount, laceTotal: type1Amount + type2Amount };
+};
+
 // Full salary breakdown for one employee-month
 export const calculateSalary = ({
   employee,
   attendanceRecords,
   advances,
+  lacePackingRecords = [],
   settings,
   monthKey,         // "YYYY-MM"
   otherDeduction = 0,
@@ -52,6 +71,9 @@ export const calculateSalary = ({
 
   const lateFine = settings.lateFineEnabled ? stats.lateFineTotal : 0;
 
+  // Lace packing bonus
+  const lace = getLacePackingEarnings(lacePackingRecords, employee.id, monthKey);
+
   // Pending/partial advances for this employee
   const employeeAdvances = advances.filter(
     (a) => a.employeeId === employee.id && a.status !== 'Deducted'
@@ -67,7 +89,7 @@ export const calculateSalary = ({
 
   const finalSalary = Math.max(
     0,
-    grossSalary + overtimeAmount - advanceDeduction - parseFloat(otherDeduction) - lateFine
+    grossSalary + overtimeAmount + lace.laceTotal - advanceDeduction - parseFloat(otherDeduction) - lateFine
   );
 
   return {
@@ -82,6 +104,7 @@ export const calculateSalary = ({
     ...stats,
     grossSalary,
     overtimeAmount,
+    ...lace,
     advanceDeduction,
     otherDeduction: parseFloat(otherDeduction),
     lateFine,

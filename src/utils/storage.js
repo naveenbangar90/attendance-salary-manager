@@ -3,6 +3,7 @@ const KEYS = {
   ATTENDANCE: 'asm_attendance',
   ADVANCES: 'asm_advances',
   SETTINGS: 'asm_settings',
+  LACE_PACKING: 'asm_lace_packing',
 };
 
 const get = (key, fallback) => {
@@ -43,3 +44,6 @@ export const setAdvances = (d) => set(KEYS.ADVANCES, d);
 
 export const getSettings = () => ({ ...DEFAULT_SETTINGS, ...get(KEYS.SETTINGS, {}) });
 export const setSettings = (d) => set(KEYS.SETTINGS, d);
+
+export const getLacePacking = () => get(KEYS.LACE_PACKING, []);
+export const setLacePacking = (d) => set(KEYS.LACE_PACKING, d);

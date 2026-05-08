@@ -2,18 +2,19 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CalendarCheck, Calculator,
-  CreditCard, BarChart2, Settings, Building2,
+  CreditCard, BarChart2, Settings, Building2, Package,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext.jsx';
 
 const nav = [
-  { to: '/',            label: 'Dashboard',         icon: LayoutDashboard },
-  { to: '/employees',   label: 'Employees',          icon: Users },
-  { to: '/attendance',  label: 'Attendance',         icon: CalendarCheck },
-  { to: '/salary',      label: 'Salary Calculator',  icon: Calculator },
-  { to: '/advances',    label: 'Advance Management', icon: CreditCard },
-  { to: '/reports',     label: 'Reports',            icon: BarChart2 },
-  { to: '/settings',    label: 'Settings',           icon: Settings },
+  { to: '/',             label: 'Dashboard',         icon: LayoutDashboard },
+  { to: '/employees',    label: 'Employees',          icon: Users },
+  { to: '/attendance',   label: 'Attendance',         icon: CalendarCheck },
+  { to: '/lace-packing', label: 'Lace Packing',       icon: Package },
+  { to: '/salary',       label: 'Salary Calculator',  icon: Calculator },
+  { to: '/advances',     label: 'Advance Management', icon: CreditCard },
+  { to: '/reports',      label: 'Reports',            icon: BarChart2 },
+  { to: '/settings',     label: 'Settings',           icon: Settings },
 ];
 
 export default function Sidebar({ onClose }) {
@@ -54,7 +55,7 @@ export default function Sidebar({ onClose }) {
       </nav>
 
       <div className="px-4 py-4 border-t border-gray-200">
-        <p className="text-xs text-gray-400 text-center">v1.0.0 • Local Storage</p>
+        <p className="text-xs text-gray-400 text-center">v1.1.0 • Local Storage</p>
       </div>
     </div>
   );

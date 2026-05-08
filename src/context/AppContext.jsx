@@ -10,15 +10,17 @@ export const useApp = () => {
 };
 
 export const AppProvider = ({ children }) => {
-  const [employees, setEmp]      = useState(() => storage.getEmployees());
-  const [attendance, setAtt]     = useState(() => storage.getAttendance());
-  const [advances, setAdv]       = useState(() => storage.getAdvances());
-  const [settings, setSet]       = useState(() => storage.getSettings());
-  const [toasts, setToasts]      = useState([]);
+  const [employees, setEmp]        = useState(() => storage.getEmployees());
+  const [attendance, setAtt]       = useState(() => storage.getAttendance());
+  const [advances, setAdv]         = useState(() => storage.getAdvances());
+  const [lacePackingRecords, setLP] = useState(() => storage.getLacePacking());
+  const [settings, setSet]         = useState(() => storage.getSettings());
+  const [toasts, setToasts]        = useState([]);
 
   useEffect(() => { storage.setEmployees(employees); }, [employees]);
   useEffect(() => { storage.setAttendance(attendance); }, [attendance]);
   useEffect(() => { storage.setAdvances(advances); }, [advances]);
+  useEffect(() => { storage.setLacePacking(lacePackingRecords); }, [lacePackingRecords]);
   useEffect(() => { storage.setSettings(settings); }, [settings]);
 
   // ── Toast ──────────────────────────────────────────────────────────────────
@@ -111,6 +113,24 @@ export const AppProvider = ({ children }) => {
     });
   }, []);
 
+  // ── Lace Packing ───────────────────────────────────────────────────────────
+  const addLacePacking = useCallback((data) => {
+    const record = { ...data, id: Date.now().toString(), createdAt: new Date().toISOString() };
+    setLP((p) => [...p, record]);
+    showToast('Lace packing entry added');
+    return record;
+  }, [showToast]);
+
+  const updateLacePacking = useCallback((id, data) => {
+    setLP((p) => p.map((r) => (r.id === id ? { ...r, ...data } : r)));
+    showToast('Entry updated');
+  }, [showToast]);
+
+  const deleteLacePacking = useCallback((id) => {
+    setLP((p) => p.filter((r) => r.id !== id));
+    showToast('Entry deleted');
+  }, [showToast]);
+
   // ── Settings ───────────────────────────────────────────────────────────────
   const updateSettings = useCallback((data) => {
     setSet((p) => ({ ...p, ...data }));
@@ -127,16 +147,17 @@ export const AppProvider = ({ children }) => {
   }, [showToast]);
 
   const clearAllData = useCallback(() => {
-    setEmp([]); setAtt([]); setAdv([]);
+    setEmp([]); setAtt([]); setAdv([]); setLP([]);
     showToast('All data cleared');
   }, [showToast]);
 
   const value = {
-    employees, attendance, advances, settings, toasts,
+    employees, attendance, advances, lacePackingRecords, settings, toasts,
     showToast, removeToast,
     addEmployee, updateEmployee, deleteEmployee,
     bulkSaveAttendance, updateAttendance, deleteAttendance,
     addAdvance, updateAdvance, deleteAdvance, applyAdvanceDeduction,
+    addLacePacking, updateLacePacking, deleteLacePacking,
     updateSettings,
     loadSampleData, clearAllData,
   };
