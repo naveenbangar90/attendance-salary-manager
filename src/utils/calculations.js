@@ -38,15 +38,31 @@ export const LACE_RATES = {
 };
 
 // Total lace packing earnings for an employee in a month
+// Earnings are based on PACKED packets only. Pending = Taken - Packed (all-time).
 export const getLacePackingEarnings = (laceRecords, employeeId, monthKey) => {
-  const records = laceRecords.filter(
+  // Month records for earnings
+  const monthRecords = laceRecords.filter(
     (r) => r.employeeId === employeeId && r.date.startsWith(monthKey)
   );
-  const type1Packets = records.reduce((s, r) => s + (parseFloat(r.type1Packets) || 0), 0);
-  const type2Packets = records.reduce((s, r) => s + (parseFloat(r.type2Packets) || 0), 0);
-  const type1Amount  = type1Packets * LACE_RATES.type1;
-  const type2Amount  = type2Packets * LACE_RATES.type2;
-  return { type1Packets, type2Packets, type1Amount, type2Amount, laceTotal: type1Amount + type2Amount };
+  const type1Taken  = monthRecords.reduce((s, r) => s + (parseFloat(r.type1Taken)  || 0), 0);
+  const type1Packed = monthRecords.reduce((s, r) => s + (parseFloat(r.type1Packed) || 0), 0);
+  const type2Taken  = monthRecords.reduce((s, r) => s + (parseFloat(r.type2Taken)  || 0), 0);
+  const type2Packed = monthRecords.reduce((s, r) => s + (parseFloat(r.type2Packed) || 0), 0);
+  const type1Amount = type1Packed * LACE_RATES.type1;
+  const type2Amount = type2Packed * LACE_RATES.type2;
+
+  // All-time pending balance for this employee
+  const allRecords = laceRecords.filter((r) => r.employeeId === employeeId);
+  const pendingType1 = allRecords.reduce((s, r) => s + (parseFloat(r.type1Taken) || 0) - (parseFloat(r.type1Packed) || 0), 0);
+  const pendingType2 = allRecords.reduce((s, r) => s + (parseFloat(r.type2Taken) || 0) - (parseFloat(r.type2Packed) || 0), 0);
+
+  return {
+    type1Taken, type1Packed, type1Amount,
+    type2Taken, type2Packed, type2Amount,
+    laceTotal: type1Amount + type2Amount,
+    pendingType1: Math.max(0, pendingType1),
+    pendingType2: Math.max(0, pendingType2),
+  };
 };
 
 // Full salary breakdown for one employee-month
