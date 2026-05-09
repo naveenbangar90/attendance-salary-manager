@@ -49,6 +49,7 @@ const EMPTY = {
 
 function LaceForm({ initial, employees, onSave, onCancel }) {
   const [form, setForm] = useState(initial);
+  const [error, setError] = useState('');
   const F = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }));
 
   const t1Taken  = parseFloat(form.type1Taken)  || 0;
@@ -63,15 +64,15 @@ function LaceForm({ initial, employees, onSave, onCancel }) {
   const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
   const numInp = `${inp} bg-white text-center font-semibold`;
 
-  const validate = () => {
-    if (!form.employeeId) return false;
-    if (t1Packed > t1Taken) return false;
-    if (t2Packed > t2Taken) return false;
-    return true;
-  };
-
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (!validate()) return; onSave(form); }} className="space-y-4">
+    <form onSubmit={(e) => {
+      e.preventDefault();
+      if (!form.employeeId) { setError('Please select an employee.'); return; }
+      if (t1Packed > t1Taken) { setError('Flat lace packed cannot exceed taken.'); return; }
+      if (t2Packed > t2Taken) { setError('Round lace packed cannot exceed taken.'); return; }
+      setError('');
+      onSave(form);
+    }} className="space-y-4">
       {/* Employee + Date */}
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
@@ -167,10 +168,12 @@ function LaceForm({ initial, employees, onSave, onCancel }) {
         </div>
       )}
 
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+      )}
       <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">
         <button type="button" onClick={onCancel} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-        <button type="submit" disabled={!validate()}
-          className="px-5 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+        <button type="submit" className="px-5 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
           Save Entry
         </button>
       </div>
@@ -332,8 +335,8 @@ export default function LacePacking() {
     const payload = {
       employeeId: data.employeeId,
       date:       data.date,
-      type1Taken, type1Packed, type1Pending: t1Taken - t1Packed,
-      type2Taken, type2Packed, type2Pending: t2Taken - t2Packed,
+      type1Taken: t1Taken, type1Packed: t1Packed, type1Pending: t1Taken - t1Packed,
+      type2Taken: t2Taken, type2Packed: t2Packed, type2Pending: t2Taken - t2Packed,
       type1Amount: t1Packed * LACE_RATES.type1,
       type2Amount: t2Packed * LACE_RATES.type2,
       laceTotal:   t1Packed * LACE_RATES.type1 + t2Packed * LACE_RATES.type2,
