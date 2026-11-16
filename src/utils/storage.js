@@ -1,3 +1,5 @@
+import { queueWrite } from './remoteSync.js';
+
 const KEYS = {
   EMPLOYEES: 'asm_employees',
   ATTENDANCE: 'asm_attendance',
@@ -24,11 +26,13 @@ const get = (key, fallback) => {
 };
 
 const set = (key, value) => {
+  const json = JSON.stringify(value);
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(key, json);
   } catch (e) {
     console.error('localStorage write failed:', e);
   }
+  queueWrite(key, json); // no-op unless signed in to the online database
 };
 
 export const DEFAULT_SETTINGS = {

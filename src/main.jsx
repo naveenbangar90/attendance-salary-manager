@@ -1,15 +1,15 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import AuthGate from './components/Auth/AuthGate.jsx'
 import './index.css'
-import { runMigrations } from './utils/storage.js'
 
-// Migrate stored data BEFORE React mounts, so every useState initialiser in AppContext
-// reads the already-migrated shape. Idempotent — safe to run on every reload.
-runMigrations()
-
+// AuthGate migrates stored data BEFORE the app mounts (after loading it from the online database
+// when there is one), so every useState initialiser in AppContext reads the migrated shape.
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <AuthGate>
+      <App />
+    </AuthGate>
   </React.StrictMode>,
 )

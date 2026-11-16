@@ -1,9 +1,11 @@
-// Production static server for hosts like Railway: serves the Vite build in dist/ and falls back to
-// index.html so client-side routes (/employees, /salary, …) load on refresh. No dependencies.
+// Production server for hosts like Railway: the login + database API (server/api.mjs, active when
+// DATABASE_URL is set) and the Vite build in dist/, falling back to index.html so client-side
+// routes (/employees, /salary, …) load on refresh.
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handleApi, initApi } from './server/api.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), 'dist');
 const PORT = Number(process.env.PORT) || 8080;
@@ -29,9 +31,19 @@ async function fileFor(urlPath) {
   }
 }
 
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'same-origin',
+};
+
+const online = await initApi();
+
 createServer(async (req, res) => {
   try {
     const urlPath = new URL(req.url, 'http://x').pathname;
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+    if (await handleApi(req, res, urlPath)) return;
     let path = await fileFor(urlPath);
     if (!path && urlPath.startsWith('/assets/')) return res.writeHead(404).end('Not found');
     path ||= join(ROOT, 'index.html');
@@ -45,4 +57,4 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(500).end('Server error');
   }
-}).listen(PORT, '0.0.0.0', () => console.log(`Serving dist on port ${PORT}`));
+}).listen(PORT, '0.0.0.0', () => console.log(`Serving dist on port ${PORT}${online ? ' with database + login' : ' (no DATABASE_URL: offline mode)'}`));

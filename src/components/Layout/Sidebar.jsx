@@ -5,6 +5,7 @@ import {
   CreditCard, BarChart2, Settings, Building2, Package, Wallet, BookOpen, Fingerprint,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext.jsx';
+import AccountPanel from '../Auth/AccountPanel.jsx';
 
 const nav = [
   { to: '/',             label: 'Dashboard',         icon: LayoutDashboard },
@@ -58,7 +59,7 @@ export default function Sidebar({ onClose }) {
       </nav>
 
       <div className="px-4 py-4 border-t border-gray-200">
-        <p className="text-xs text-gray-400 text-center">v1.1.0 • Local Storage</p>
+        <AccountPanel />
       </div>
     </div>
   );
