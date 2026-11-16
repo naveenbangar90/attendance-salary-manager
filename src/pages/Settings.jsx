@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import CheckinLogins from '../components/Auth/CheckinLogins.jsx';
+import { isOnline } from '../utils/remoteSync.js';
 import { Save, AlertTriangle, Database, Trash2, Settings as SettingsIcon, FileSpreadsheet, Mail, Cloud, ExternalLink, Loader2, Archive } from 'lucide-react';
 import { getBackupV0 } from '../utils/storage.js';
 import { buildLedger } from '../utils/ledger.js';
@@ -251,6 +253,8 @@ export default function Settings() {
           <input className={inp} value={form.companyName} onChange={F('companyName')} placeholder="My Company" />
         </div>
       </Section>
+
+      {isOnline() && <CheckinLogins />}
 
       <Section title="Salary Calculation">
         <div className="grid grid-cols-2 gap-4">

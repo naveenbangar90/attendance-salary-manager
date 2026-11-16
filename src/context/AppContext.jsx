@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import * as storage from '../utils/storage.js';
 import { round2, todayStr } from '../utils/calculations.js';
 import { applyDeductionToAdvances, reverseDeductionFromAdvances, deriveAdvanceStatus } from '../utils/advanceLogic.js';
+import { onRemoteChange } from '../utils/remoteSync.js';
 
 const AppContext = createContext(null);
 
@@ -26,6 +27,17 @@ export const AppProvider = ({ children }) => {
   useEffect(() => { storage.setLacePacking(lacePackingRecords); }, [lacePackingRecords]);
   useEffect(() => { storage.setPayouts(payouts); }, [payouts]);
   useEffect(() => { storage.setSettings(settings); }, [settings]);
+
+  // Online: collections changed elsewhere (check-in kiosk, another device) replace local state.
+  useEffect(() => onRemoteChange((key) => {
+    const K = storage.STORAGE_KEYS;
+    if (key === K.EMPLOYEES) setEmp(storage.getEmployees());
+    else if (key === K.ATTENDANCE) setAtt(storage.getAttendance());
+    else if (key === K.ADVANCES) setAdv(storage.getAdvances());
+    else if (key === K.LACE_PACKING) setLP(storage.getLacePacking());
+    else if (key === K.PAYOUTS) setPayouts(storage.getPayouts());
+    else if (key === K.SETTINGS) setSet(storage.getSettings());
+  }), []);
 
   // ── Toast ──────────────────────────────────────────────────────────────────
   const showToast = useCallback((message, type = 'success') => {

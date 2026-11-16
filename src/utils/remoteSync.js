@@ -4,12 +4,18 @@
 //
 // The app still reads and writes localStorage synchronously; this module mirrors it:
 //   • on start, pull every collection from the server into localStorage (server wins), then render;
-//   • every storage write is queued and PUT (debounced) with the version it was based on, so an
-//     edit made meanwhile on another device produces a conflict instead of being overwritten.
+//   • every storage write is queued and PUT (debounced) with the version it was based on. If the
+//     collection changed elsewhere meanwhile (the check-in kiosk, another device), the local edits
+//     are merged onto the server's copy (mergeCollections.js); only unmergeable data is a conflict;
+//   • every POLL_MS, collections changed elsewhere are pulled in and handed to the app.
+
+import { mergeCollection } from './mergeCollections.js';
 
 const API = '/api';
 const DEBOUNCE_MS = 800;
 const RETRY_MS = 5000;
+const POLL_MS = 30000;
+const MAX_MERGE_ATTEMPTS = 3;
 
 const state = {
   online: false,
@@ -21,7 +27,22 @@ const state = {
   flushing: false,
   status: 'saved', // saved | saving | offline | conflict | signed_out
   listeners: new Set(),
+  changeListeners: new Set(), // (key, json) for collections replaced from the server
+  pollTimer: null,
 };
+
+// The app subscribes so its in-memory state follows collections replaced from the server.
+export function onRemoteChange(fn) {
+  state.changeListeners.add(fn);
+  return () => state.changeListeners.delete(fn);
+}
+
+function applyRemote(key, value, version) {
+  localStorage.setItem(key, value);
+  state.versions[key] = version;
+  state.synced[key] = value;
+  state.changeListeners.forEach((fn) => fn(key, value));
+}
 
 function setStatus(status) {
   if (state.status === status) return;
@@ -78,6 +99,8 @@ export async function pullAll(user) {
   if (status !== 200) throw new Error(`Could not load data (HTTP ${status})`);
   state.online = true;
   state.user = user;
+  clearInterval(state.pollTimer);
+  state.pollTimer = setInterval(poll, POLL_MS);
   const items = body.items || {};
   const serverEmpty = Object.keys(items).length === 0;
   const localHasData = (() => {
@@ -147,6 +170,7 @@ export async function flush() {
         state.synced[key] = value;
         if (state.pending.get(key) === value) state.pending.delete(key);
       } else if (res.status === 409) {
+        if (await mergeAndSave(key, value)) continue;
         setStatus('conflict');
         return;
       } else if (res.status === 401) {
@@ -165,10 +189,65 @@ export async function flush() {
   }
 }
 
+// The server has a newer copy of `key`: replay this device's edits onto it and save the result.
+async function mergeAndSave(key, localValue) {
+  let base;
+  try { base = JSON.parse(state.synced[key] ?? '[]'); } catch { return false; }
+  for (let attempt = 0; attempt < MAX_MERGE_ATTEMPTS; attempt++) {
+    const latest = await api(`/data/${encodeURIComponent(key)}`).catch(() => null);
+    if (latest?.status !== 200) return false;
+    let merged;
+    try {
+      merged = mergeCollection(key, base, JSON.parse(localValue), JSON.parse(latest.body.value ?? '[]'));
+    } catch {
+      return false;
+    }
+    if (!merged) return false;
+    const value = JSON.stringify(merged);
+    const res = await api(`/data/${encodeURIComponent(key)}`, {
+      method: 'PUT', body: JSON.stringify({ value, baseVersion: latest.body.version }),
+    }).catch(() => null);
+    if (res?.status === 200) {
+      const newer = state.pending.get(key);
+      state.pending.delete(key);
+      applyRemote(key, value, res.body.version);
+      // An edit made while this merge was in flight was based on the pre-merge copy: rebase it
+      // too, or saving it would drop what the merge just brought in.
+      if (newer !== undefined && newer !== localValue) {
+        const again = mergeCollection(key, base, JSON.parse(newer), merged);
+        if (again) {
+          const v = JSON.stringify(again);
+          localStorage.setItem(key, v);
+          state.changeListeners.forEach((fn) => fn(key, v));
+          queueWrite(key, v);
+        }
+      }
+      return true;
+    }
+    if (res?.status !== 409) return false;
+  }
+  return false;
+}
+
+// Pull in collections that changed elsewhere (e.g. kiosk check-ins), skipping any with unsaved
+// local edits — those get merged when they are saved.
+async function poll() {
+  if (!state.online || state.flushing || state.status === 'conflict' || state.status === 'signed_out') return;
+  const res = await api('/versions').catch(() => null);
+  if (res?.status === 401) return setStatus('signed_out');
+  if (res?.status !== 200) return;
+  for (const [key, version] of Object.entries(res.body.versions)) {
+    if (version === state.versions[key] || state.pending.has(key)) continue;
+    const one = await api(`/data/${encodeURIComponent(key)}`).catch(() => null);
+    if (one?.status === 200 && one.body.value != null && !state.pending.has(key)) applyRemote(key, one.body.value, one.body.version);
+  }
+}
+
 export const hasUnsaved = () => state.pending.size > 0;
 
 // Sign out and remove this device's copy of the data (it lives safely in the database).
 export async function signOut() {
+  clearInterval(state.pollTimer);
   await flush();
   if (state.pending.size > 0 && !window.confirm('Some changes have not reached the server yet and will be lost. Sign out anyway?')) return false;
   await api('/logout', { method: 'POST' }).catch(() => {});
@@ -187,3 +266,17 @@ if (typeof window !== 'undefined') {
     }
   });
 }
+
+// ── Check-in login (kiosk) ───────────────────────────────────────────────────
+
+export const kioskToday = (date) => api(`/kiosk/today?date=${encodeURIComponent(date)}`);
+export const kioskCheckIn = (employeeId, date, time) =>
+  api('/kiosk/checkin', { method: 'POST', body: JSON.stringify({ employeeId, date, time }) });
+
+// Owner: manage check-in logins.
+export const listLogins = () => api('/users');
+export const createCheckinLogin = (username, password) =>
+  api('/users', { method: 'POST', body: JSON.stringify({ username, password }) });
+export const resetCheckinPassword = (id, password) =>
+  api(`/users/${id}/password`, { method: 'POST', body: JSON.stringify({ password }) });
+export const deleteCheckinLogin = (id) => api(`/users/${id}`, { method: 'DELETE' });

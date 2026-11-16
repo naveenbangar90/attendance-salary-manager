@@ -4,6 +4,7 @@ import {
   detectMode, signIn, setupOwner, pullAll, seedServer, pushChanged, onSyncStatus, syncStatus,
 } from '../../utils/remoteSync.js';
 import { runMigrations } from '../../utils/storage.js';
+import KioskApp from './KioskApp.jsx';
 
 const ERRORS = {
   bad_credentials: 'Wrong username or password.',
@@ -157,7 +158,8 @@ function SyncBanner() {
 
 // Decides how the app starts:
 //   local  (no server API: localhost / GitHub Pages) — migrate localStorage and render;
-//   online (Railway) — sign in, load the database into localStorage, migrate, render.
+//   online (Railway) — sign in, load the database into localStorage, migrate, render;
+//   check-in login — only the check-in station, which never loads the app's data.
 export default function AuthGate({ children }) {
   const [phase, setPhase] = useState({ name: 'loading' });
 
@@ -169,6 +171,7 @@ export default function AuthGate({ children }) {
       return setPhase({ name: 'ready', online: false });
     }
     if (!mode.authenticated) return setPhase({ name: 'signin', needsSetup: mode.needsSetup });
+    if (mode.user.role === 'checkin') return setPhase({ name: 'kiosk', user: mode.user });
     try {
       const { serverEmpty, localHasData } = await pullAll(mode.user);
       if (serverEmpty && localHasData) return setPhase({ name: 'seed' });
@@ -190,6 +193,8 @@ export default function AuthGate({ children }) {
   switch (phase.name) {
     case 'signin':
       return <SignInForm needsSetup={phase.needsSetup} onSignedIn={start} />;
+    case 'kiosk':
+      return <KioskApp user={phase.user} />;
     case 'seed':
       return <SeedChoice onChoose={async (upload) => { await seedServer(upload); finishOnline(); }} />;
     case 'error':
