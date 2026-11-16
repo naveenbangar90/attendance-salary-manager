@@ -1,12 +1,14 @@
-import React, { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, UserCheck, UserX, Users } from 'lucide-react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { Plus, Search, Edit2, Trash2, UserCheck, UserX, Users, Fingerprint } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import Modal from '../components/Common/Modal.jsx';
+import EnrollFingerprint from '../components/Fingerprint/EnrollFingerprint.jsx';
+import { fingerprintStatus, removeFingerprint } from '../utils/fingerprint.js';
 import ConfirmDialog from '../components/Common/ConfirmDialog.jsx';
 import EmptyState from '../components/Common/EmptyState.jsx';
 import { formatCurrency } from '../utils/calculations.js';
 
-const EMPTY_FORM = { employeeCode: '', name: '', mobile: '', role: '', monthlySalary: '', joiningDate: '', status: 'Active' };
+const EMPTY_FORM = { employeeCode: '', name: '', mobile: '', role: '', monthlySalary: '', joiningDate: '', leftDate: '', status: 'Active' };
 
 function EmployeeForm({ initial = EMPTY_FORM, onSave, onCancel, settings }) {
   const [form, setForm] = useState(initial);
@@ -62,6 +64,13 @@ function EmployeeForm({ initial = EMPTY_FORM, onSave, onCancel, settings }) {
             <option value="Inactive">Inactive</option>
           </select>
         </div>
+        {form.status === 'Inactive' && (
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Left Date</label>
+            <input className={inputCls} type="date" value={form.leftDate || ''} onChange={F('leftDate')} />
+            <p className="text-xs text-gray-400 mt-1">Used to pro-rate salary for the month the employee left.</p>
+          </div>
+        )}
       </div>
       <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">
         <button type="button" onClick={onCancel} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
@@ -77,6 +86,25 @@ export default function Employees() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [modal, setModal] = useState(null); // null | 'add' | { id, ... }
   const [deleteId, setDeleteId] = useState(null);
+  const [fpEmployee, setFpEmployee] = useState(null);
+  // employeeId -> number of enrolled scans; null while the fingerprint service is unreachable
+  const [enrolled, setEnrolled] = useState(null);
+
+  const refreshEnrolled = useCallback(async () => {
+    const res = await fingerprintStatus();
+    setEnrolled(res.ok ? res.enrolled : null);
+  }, []);
+  useEffect(() => { refreshEnrolled(); }, [refreshEnrolled]);
+
+  const fingerprintButton = (emp, cls) => (
+    <button
+      onClick={() => setFpEmployee(emp)}
+      title={enrolled === null ? 'Fingerprint service offline' : enrolled[emp.id] ? 'Fingerprint enrolled' : 'Enroll fingerprint'}
+      className={`${cls} ${enrolled?.[emp.id] ? 'text-green-600 hover:bg-green-50' : 'text-gray-500 hover:bg-gray-100'}`}
+    >
+      <Fingerprint size={14} />
+    </button>
+  );
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -88,9 +116,10 @@ export default function Employees() {
   }, [employees, search, statusFilter]);
 
   const handleSave = (data) => {
-    if (modal === 'add') { addEmployee(data); }
-    else { updateEmployee(modal.id, data); }
-    setModal(null);
+    // Keep the modal open when the save is rejected (e.g. duplicate employee code)
+    // so the user can correct it instead of losing what they typed.
+    const res = modal === 'add' ? addEmployee(data) : updateEmployee(modal.id, data);
+    if (res?.ok !== false) setModal(null);
   };
 
   return (
@@ -150,10 +179,16 @@ export default function Employees() {
                     <td className="px-4 py-3 text-gray-600">{formatCurrency(emp.monthlySalary / settings.totalWorkingDays)}</td>
                     <td className="px-4 py-3 text-gray-500">{emp.joiningDate}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${emp.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{emp.status}</span>
+                      <div className="flex flex-col">
+                        <span className={`inline-flex w-fit px-2 py-0.5 rounded-full text-xs font-medium ${emp.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{emp.status}</span>
+                        {emp.status === 'Inactive' && emp.leftDate && (
+                          <span className="text-[10px] text-gray-400 mt-1">Left: {emp.leftDate}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
+                        {fingerprintButton(emp, 'p-1.5 rounded')}
                         <button onClick={() => setModal(emp)} className="p-1.5 rounded hover:bg-blue-50 text-blue-600"><Edit2 size={14} /></button>
                         <button onClick={() => setDeleteId(emp.id)} className="p-1.5 rounded hover:bg-red-50 text-red-500"><Trash2 size={14} /></button>
                       </div>
@@ -174,7 +209,7 @@ export default function Employees() {
                     <p className="text-xs text-gray-400">{emp.employeeCode} · {emp.role}</p>
                     <p className="text-xs text-gray-500 mt-1">{emp.mobile}</p>
                   </div>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${emp.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{emp.status}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${emp.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{emp.status}</span>
                 </div>
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
                   <div>
@@ -182,6 +217,7 @@ export default function Employees() {
                     <p className="text-sm font-bold text-gray-800">{formatCurrency(emp.monthlySalary)}</p>
                   </div>
                   <div className="flex gap-2">
+                    {fingerprintButton(emp, 'px-3 py-1.5 bg-gray-50 text-xs rounded-lg')}
                     <button onClick={() => setModal(emp)} className="px-3 py-1.5 bg-blue-50 text-blue-600 text-xs rounded-lg"><Edit2 size={12} /></button>
                     <button onClick={() => setDeleteId(emp.id)} className="px-3 py-1.5 bg-red-50 text-red-500 text-xs rounded-lg"><Trash2 size={12} /></button>
                   </div>
@@ -202,12 +238,27 @@ export default function Employees() {
         />
       </Modal>
 
+      {/* Fingerprint enrolment */}
+      <Modal isOpen={!!fpEmployee} onClose={() => setFpEmployee(null)} title="Fingerprint" size="md">
+        {fpEmployee && (enrolled === null ? (
+          <p className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
+            The fingerprint service is not running. Start it with <code>~/NBio/start-fingerprint.sh</code>, then reopen this window.
+          </p>
+        ) : (
+          <EnrollFingerprint employee={fpEmployee} enrolled={enrolled[fpEmployee.id] || 0} onChanged={refreshEnrolled} />
+        ))}
+      </Modal>
+
       {/* Delete Confirm */}
       <ConfirmDialog
         isOpen={!!deleteId}
         title="Delete Employee"
         message="This will permanently delete the employee. Attendance and advance records will remain."
-        onConfirm={() => { deleteEmployee(deleteId); setDeleteId(null); }}
+        onConfirm={() => {
+          deleteEmployee(deleteId);
+          if (enrolled?.[deleteId]) removeFingerprint(deleteId).then(refreshEnrolled);
+          setDeleteId(null);
+        }}
         onCancel={() => setDeleteId(null)}
       />
     </div>

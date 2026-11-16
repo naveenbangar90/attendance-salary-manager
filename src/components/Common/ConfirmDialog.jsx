@@ -11,9 +11,11 @@ export default function ConfirmDialog({ isOpen, onConfirm, onCancel, title = 'Co
           <div className={`p-2 rounded-full ${danger ? 'bg-red-100' : 'bg-yellow-100'}`}>
             <AlertTriangle size={22} className={danger ? 'text-red-600' : 'text-yellow-600'} />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="font-semibold text-gray-900">{title}</h3>
-            <p className="text-sm text-gray-500 mt-1">{message}</p>
+            {/* whitespace-pre-line so callers can lay out figures on their own lines —
+                a settlement summary is unreadable as one run-on paragraph. */}
+            <p className="text-sm text-gray-600 mt-1 whitespace-pre-line break-words">{message}</p>
           </div>
         </div>
         <div className="flex gap-3 mt-6 justify-end">

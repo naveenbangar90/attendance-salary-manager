@@ -2,48 +2,64 @@ import React, { useMemo } from 'react';
 import { Users, UserCheck, UserX, IndianRupee, CreditCard, TrendingDown, Database } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import StatCard from '../components/Common/StatCard.jsx';
-import { formatCurrency, todayStr, currentMonthKey, calculateSalary, getAttendanceStats } from '../utils/calculations.js';
+import { formatCurrency, todayStr, currentMonthKey, calculateSalary, round2, toDateStr } from '../utils/calculations.js';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 export default function Dashboard() {
-  const { employees, attendance, advances, settings, loadSampleData } = useApp();
+  const { employees, attendance, advances, lacePackingRecords, payouts, settings, loadSampleData } = useApp();
   const navigate = useNavigate();
   const today = todayStr();
   const month = currentMonthKey();
 
   const activeEmployees = useMemo(() => employees.filter((e) => e.status === 'Active'), [employees]);
 
-  const todayAttendance = useMemo(() => attendance.filter((a) => a.date === today), [attendance, today]);
-  const presentToday = todayAttendance.filter((a) => ['Present', 'Paid Leave', 'Half Day'].includes(a.status)).length;
+  // Only count records belonging to ACTIVE employees — otherwise an inactive employee's
+  // record for today makes `notMarked` go negative.
+  const activeIds = useMemo(() => new Set(activeEmployees.map((e) => e.id)), [activeEmployees]);
+  const todayAttendance = useMemo(
+    () => attendance.filter((a) => a.date === today && activeIds.has(a.employeeId)),
+    [attendance, today, activeIds]
+  );
+  const presentToday = todayAttendance.filter((a) => ['Present', 'Overtime', 'Paid Leave', 'Half Day'].includes(a.status)).length;
   const absentToday  = todayAttendance.filter((a) => a.status === 'Absent').length;
-  const notMarked    = activeEmployees.length - todayAttendance.length;
+  const notMarked    = Math.max(0, activeEmployees.length - todayAttendance.length);
 
   const totalPendingAdvance = useMemo(() =>
-    advances.filter((a) => a.status !== 'Deducted').reduce((s, a) => s + parseFloat(a.remainingAmount || 0), 0),
+    round2(advances
+      // Early-paid salary is not a loan — it settles via the payout, so it must not show
+      // as an outstanding advance here.
+      .filter((a) => a.status !== 'Deducted' && a.kind !== 'salary_advance')
+      .reduce((s, a) => s + parseFloat(a.remainingAmount || 0), 0)),
   [advances]);
 
-  const monthAdvanceDeducted = useMemo(() =>
-    advances.filter((a) => a.status === 'Deducted' && a.date?.startsWith(month))
-      .reduce((s, a) => s + parseFloat(a.deductedAmount || 0), 0),
-  [advances, month]);
-
-  // Rough total salary payable this month
+  // Uses the SAME calculateSalary as the Salary Calculator, Reports and the CSV, reading
+  // the finalised adjustments where a month has been finalised. One formula, four surfaces.
   const totalSalaryPayable = useMemo(() => {
-    return activeEmployees.reduce((sum, emp) => {
+    return round2(activeEmployees.reduce((sum, emp) => {
       const empAtt = attendance.filter((a) => a.employeeId === emp.id && a.date?.startsWith(month));
-      const { paidDays } = getAttendanceStats(empAtt, settings);
-      const daily = emp.monthlySalary / settings.totalWorkingDays;
-      return sum + daily * paidDays;
-    }, 0);
-  }, [activeEmployees, attendance, settings, month]);
+      const p = payouts.find((x) => x.employeeId === emp.id && x.month === month);
+      const r = calculateSalary({
+        employee: emp,
+        attendanceRecords: empAtt,
+        advances,
+        lacePackingRecords,
+        settings,
+        monthKey: month,
+        advanceDeductionOverride: p?.snapshot?.advanceDeduction ?? 0,
+        otherDeduction: p?.snapshot?.otherDeduction ?? 0,
+        bonus: p?.snapshot?.bonus ?? 0,
+      });
+      return sum + r.finalSalary;
+    }, 0));
+  }, [activeEmployees, attendance, advances, lacePackingRecords, payouts, settings, month]);
 
   // Chart data — last 7 days attendance
   const chartData = useMemo(() => {
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(); d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = toDateStr(d);   // local date, not UTC
       const label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' });
       const dayRecs = attendance.filter((a) => a.date === key);
       days.push({
@@ -71,8 +87,17 @@ export default function Dashboard() {
   const getEmpName = (id) => employees.find((e) => e.id === id)?.name || 'Unknown';
 
   const statusColor = (s) => {
-    const map = { Present: 'bg-green-100 text-green-700', Absent: 'bg-red-100 text-red-700', 'Half Day': 'bg-yellow-100 text-yellow-700', 'Paid Leave': 'bg-blue-100 text-blue-700', 'Weekly Off': 'bg-purple-100 text-purple-700', 'Unpaid Leave': 'bg-orange-100 text-orange-700', 'Not Marked': 'bg-gray-100 text-gray-500' };
-    return map[s] || 'bg-gray-100 text-gray-500';
+    const map = {
+      Present: 'bg-green-100 text-green-700',
+      Overtime: 'bg-indigo-100 text-indigo-700',
+      Absent: 'bg-red-100 text-red-700',
+      'Half Day': 'bg-yellow-100 text-yellow-700',
+      'Paid Leave': 'bg-blue-100 text-blue-700',
+      'Weekly Off': 'bg-purple-100 text-purple-700',
+      'Unpaid Leave': 'bg-orange-100 text-orange-700',
+      'Not Marked': 'bg-gray-100 text-gray-600',
+    };
+    return map[s] || 'bg-gray-100 text-gray-600';
   };
 
   const hasData = employees.length > 0;

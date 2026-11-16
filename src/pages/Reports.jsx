@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Download, Printer, BarChart2, Calendar, Users, CreditCard, Filter } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import EmptyState from '../components/Common/EmptyState.jsx';
-import { formatCurrency, calculateSalary, formatMonthLabel, currentMonthKey, getAttendanceStats } from '../utils/calculations.js';
+import { formatCurrency, calculateSalary, formatMonthLabel, currentMonthKey, getMonthDayStats } from '../utils/calculations.js';
 import { downloadCSV, printElement } from '../utils/exportUtils.js';
 
 const STATUS_COLORS = {
@@ -13,7 +13,7 @@ const STATUS_COLORS = {
 };
 
 export default function Reports() {
-  const { employees, attendance, advances, settings } = useApp();
+  const { employees, attendance, advances, lacePackingRecords, payouts, settings } = useApp();
   const [tab, setTab] = useState('attendance');
   const [month, setMonth] = useState(currentMonthKey());
   const [empFilter, setEmpFilter] = useState('all');
@@ -38,9 +38,23 @@ export default function Reports() {
     const emps = empFilter === 'all' ? activeEmployees : activeEmployees.filter((e) => e.id === empFilter);
     return emps.map((emp) => {
       const empAtt = attendance.filter((a) => a.employeeId === emp.id && a.date.startsWith(month));
-      return calculateSalary({ employee: emp, attendanceRecords: empAtt, advances, settings, monthKey: month });
+      // Reads the adjustments recorded when the month was finalised, so this report agrees
+      // with the Salary Calculator instead of silently dropping lace / advance / bonus.
+      const p = payouts.find((x) => x.employeeId === emp.id && x.month === month);
+      return calculateSalary({
+        employee: emp,
+        attendanceRecords: empAtt,
+        advances,
+        lacePackingRecords,
+        settings,
+        monthKey: month,
+        advanceDeductionOverride: p?.snapshot?.advanceDeduction ?? 0,
+        otherDeduction: p?.snapshot?.otherDeduction ?? 0,
+        bonus: p?.snapshot?.bonus ?? 0,
+        bonusRemarks: p?.snapshot?.bonusRemarks ?? '',
+      });
     });
-  }, [activeEmployees, attendance, advances, settings, month, empFilter]);
+  }, [activeEmployees, attendance, advances, lacePackingRecords, payouts, settings, month, empFilter]);
 
   // ── Advance Report ────────────────────────────────────────────────────────
   const advReport = useMemo(() => {
@@ -55,7 +69,7 @@ export default function Reports() {
     const emps = empFilter === 'all' ? activeEmployees : activeEmployees.filter((e) => e.id === empFilter);
     return emps.map((emp) => {
       const empAtt = attendance.filter((a) => a.employeeId === emp.id && a.date.startsWith(month));
-      const stats = getAttendanceStats(empAtt, settings);
+      const stats = getMonthDayStats(emp, empAtt, settings, month);
       return { ...emp, ...stats, totalRecords: empAtt.length };
     });
   }, [activeEmployees, attendance, settings, month, empFilter]);

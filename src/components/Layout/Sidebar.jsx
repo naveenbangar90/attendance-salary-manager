@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CalendarCheck, Calculator,
-  CreditCard, BarChart2, Settings, Building2, Package,
+  CreditCard, BarChart2, Settings, Building2, Package, Wallet, BookOpen, Fingerprint,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext.jsx';
 
@@ -10,9 +10,12 @@ const nav = [
   { to: '/',             label: 'Dashboard',         icon: LayoutDashboard },
   { to: '/employees',    label: 'Employees',          icon: Users },
   { to: '/attendance',   label: 'Attendance',         icon: CalendarCheck },
+  { to: '/checkin',      label: 'Fingerprint Check-in', icon: Fingerprint },
   { to: '/lace-packing', label: 'Lace Packing',       icon: Package },
   { to: '/salary',       label: 'Salary Calculator',  icon: Calculator },
   { to: '/advances',     label: 'Advance Management', icon: CreditCard },
+  { to: '/payouts',      label: 'Salary Payouts',     icon: Wallet },
+  { to: '/ledger',       label: 'Employee Ledger',    icon: BookOpen },
   { to: '/reports',      label: 'Reports',            icon: BarChart2 },
   { to: '/settings',     label: 'Settings',           icon: Settings },
 ];

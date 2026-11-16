@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Attendance — Data Migration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 820px; margin: 24px auto; padding: 0 16px; color: #1f2937; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  .origin { background: #f3f4f6; padding: 6px 10px; border-radius: 6px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin: 16px 0; background: #fff; }
+  textarea { width: 100%; min-height: 260px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; box-sizing: border-box; }
+  button { background: #2563eb; color: #fff; border: 0; padding: 10px 16px; font-size: 14px; border-radius: 8px; cursor: pointer; margin-right: 8px; }
+  button.secondary { background: #6b7280; }
+  button.danger { background: #dc2626; }
+  .status { margin-top: 8px; font-size: 13px; }
+  .ok { color: #059669; }
+  .err { color: #dc2626; }
+  ul { margin: 6px 0; padding-left: 18px; font-size: 13px; }
+  code { background: #f3f4f6; padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Attendance &mdash; localStorage Migration Helper</h1>
+<p>Current origin: <span class="origin" id="origin"></span></p>
+
+<div class="card">
+  <h2 style="margin-top:0;font-size:15px;">1. Export (run on the OLD origin, e.g. <code>localhost:5173</code>)</h2>
+  <p>Click <b>Show Export</b>, then <b>Copy</b>. The JSON contains every <code>asm_*</code> key in this origin's localStorage.</p>
+  <button onclick="doExport()">Show Export</button>
+  <button class="secondary" onclick="doCopy()">Copy to Clipboard</button>
+  <div class="status" id="exportStatus"></div>
+  <textarea id="exportBox" placeholder="Click Show Export to populate" readonly></textarea>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;font-size:15px;">2. Import (run on the NEW origin, e.g. <code>localhost:5999</code>)</h2>
+  <p>Paste the JSON you copied above, then click <b>Import</b>. Existing <code>asm_*</code> keys on this origin will be overwritten.</p>
+  <textarea id="importBox" placeholder='{"asm_employees":[...],"asm_attendance":[...], ...}'></textarea>
+  <div style="margin-top:8px;">
+    <button onclick="doImport()">Import &amp; Replace</button>
+    <button class="danger" onclick="if(confirm('Erase all asm_* keys at this origin?')){clearAsm();}">Clear asm_* keys here</button>
+  </div>
+  <div class="status" id="importStatus"></div>
+</div>
+
+<div class="card" style="background:#f9fafb;">
+  <h2 style="margin-top:0;font-size:15px;">3. Verify</h2>
+  <button class="secondary" onclick="showCurrent()">Show current asm_* keys at this origin</button>
+  <pre id="currentBox" style="font-size:11px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:10px;overflow:auto;max-height:200px;"></pre>
+</div>
+
+<script>
+  document.getElementById('origin').textContent = location.origin;
+
+  function asmKeys() {
+    const out = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('asm_')) out.push(k);
+    }
+    return out;
+  }
+
+  function doExport() {
+    const blob = {};
+    asmKeys().forEach(k => {
+      try { blob[k] = JSON.parse(localStorage.getItem(k)); }
+      catch { blob[k] = localStorage.getItem(k); }
+    });
+    document.getElementById('exportBox').value = JSON.stringify(blob, null, 2);
+    document.getElementById('exportStatus').innerHTML =
+      `<span class="ok">Exported ${Object.keys(blob).length} key(s): ${Object.keys(blob).join(', ') || '(none)'}</span>`;
+  }
+
+  async function doCopy() {
+    const txt = document.getElementById('exportBox').value;
+    if (!txt) { document.getElementById('exportStatus').innerHTML = '<span class="err">Click Show Export first.</span>'; return; }
+    try {
+      await navigator.clipboard.writeText(txt);
+      document.getElementById('exportStatus').innerHTML = '<span class="ok">Copied to clipboard.</span>';
+    } catch (e) {
+      // Fallback: select the textarea
+      const ta = document.getElementById('exportBox');
+      ta.select(); document.execCommand('copy');
+      document.getElementById('exportStatus').innerHTML = '<span class="ok">Copied (fallback).</span>';
+    }
+  }
+
+  function doImport() {
+    const txt = document.getElementById('importBox').value.trim();
+    if (!txt) { document.getElementById('importStatus').innerHTML = '<span class="err">Paste exported JSON first.</span>'; return; }
+    let obj;
+    try { obj = JSON.parse(txt); }
+    catch (e) {
+      document.getElementById('importStatus').innerHTML = '<span class="err">Invalid JSON: ' + e.message + '</span>';
+      return;
+    }
+    let count = 0;
+    Object.keys(obj).forEach(k => {
+      if (!k.startsWith('asm_')) return; // safety
+      const v = obj[k];
+      localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+      count++;
+    });
+    document.getElementById('importStatus').innerHTML =
+      `<span class="ok">Imported ${count} key(s). Now open the main app at this origin and your data should be back.</span>`;
+    showCurrent();
+  }
+
+  function clearAsm() {
+    asmKeys().forEach(k => localStorage.removeItem(k));
+    document.getElementById('importStatus').innerHTML = '<span class="ok">Cleared asm_* keys.</span>';
+    showCurrent();
+  }
+
+  function showCurrent() {
+    const keys = asmKeys();
+    if (!keys.length) { document.getElementById('currentBox').textContent = '(no asm_* keys at this origin)'; return; }
+    const summary = keys.map(k => {
+      const raw = localStorage.getItem(k);
+      let label = '';
+      try { const v = JSON.parse(raw); label = Array.isArray(v) ? `array, ${v.length} item(s)` : 'object'; }
+      catch { label = `string, ${raw.length} chars`; }
+      return `${k}  —  ${label}`;
+    }).join('\n');
+    document.getElementById('currentBox').textContent = summary;
+  }
+
+  showCurrent();
+</script>
+</body>
+</html>

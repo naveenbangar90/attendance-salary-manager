@@ -5,24 +5,30 @@ import Layout from './components/Layout/Layout.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Employees from './pages/Employees.jsx';
 import Attendance from './pages/Attendance.jsx';
+import FingerprintCheckIn from './pages/FingerprintCheckIn.jsx';
 import SalaryCalculator from './pages/SalaryCalculator.jsx';
 import LacePacking from './pages/LacePacking.jsx';
 import AdvanceManagement from './pages/AdvanceManagement.jsx';
+import Payouts from './pages/Payouts.jsx';
+import Ledger from './pages/Ledger.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
 
 export default function App() {
   return (
     <AppProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Layout>
           <Routes>
             <Route path="/"          element={<Dashboard />} />
             <Route path="/employees" element={<Employees />} />
             <Route path="/attendance" element={<Attendance />} />
+            <Route path="/checkin"   element={<FingerprintCheckIn />} />
             <Route path="/lace-packing" element={<LacePacking />} />
             <Route path="/salary"    element={<SalaryCalculator />} />
             <Route path="/advances"  element={<AdvanceManagement />} />
+            <Route path="/payouts"   element={<Payouts />} />
+            <Route path="/ledger"    element={<Ledger />} />
             <Route path="/reports"   element={<Reports />} />
             <Route path="/settings"  element={<Settings />} />
           </Routes>
