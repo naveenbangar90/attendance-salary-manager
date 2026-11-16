@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "dependencies": {
     "date-fns": "^3.0.6",
