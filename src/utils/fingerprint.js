@@ -35,6 +35,7 @@ export function describeError(error) {
     case 'busy': return 'The scanner is in use by another window.';
     case 'timeout': return 'No finger detected.';
     case 'cancelled': return 'Scan cancelled.';
+    case 'scanner_stuck': return 'The scanner stopped responding. Unplug it, wait 5 seconds, plug it back in, then press Start.';
     case 'poor_quality': return 'That press was too faint or smudged. Press the finger flat and firmly.';
     case 'samples_disagree': return 'Too few scans matched each other. Use the same finger each time, pressed flat and firmly.';
     case 'already_enrolled': return 'This finger is already enrolled for another employee.';
