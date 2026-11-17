@@ -8,7 +8,7 @@ import { downloadCSV, printElement } from '../utils/exportUtils.js';
 const STATUS_COLORS = {
   Present: 'bg-green-100 text-green-700', Absent: 'bg-red-100 text-red-700',
   'Half Day': 'bg-yellow-100 text-yellow-700', 'Paid Leave': 'bg-blue-100 text-blue-700',
-  'Unpaid Leave': 'bg-orange-100 text-orange-700', 'Weekly Off': 'bg-purple-100 text-purple-700',
+  'Unpaid Leave': 'bg-orange-100 text-orange-700', 'Weekly Off': 'bg-purple-100 text-purple-700', 'Holiday': 'bg-pink-100 text-pink-700',
   Overtime: 'bg-indigo-100 text-indigo-700',
 };
 

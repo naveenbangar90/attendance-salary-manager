@@ -2,12 +2,13 @@ import React, { useMemo } from 'react';
 import { Users, UserCheck, UserX, IndianRupee, CreditCard, TrendingDown, Database } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import StatCard from '../components/Common/StatCard.jsx';
+import AttendanceAlerts from '../components/Dashboard/AttendanceAlerts.jsx';
 import { formatCurrency, todayStr, currentMonthKey, calculateSalary, round2, toDateStr } from '../utils/calculations.js';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 export default function Dashboard() {
-  const { employees, attendance, advances, lacePackingRecords, payouts, settings, loadSampleData } = useApp();
+  const { employees, attendance, advances, lacePackingRecords, payouts, settings, loadSampleData, updateSettings, bulkSaveAttendance } = useApp();
   const navigate = useNavigate();
   const today = todayStr();
   const month = currentMonthKey();
@@ -94,6 +95,7 @@ export default function Dashboard() {
       'Half Day': 'bg-yellow-100 text-yellow-700',
       'Paid Leave': 'bg-blue-100 text-blue-700',
       'Weekly Off': 'bg-purple-100 text-purple-700',
+      'Holiday': 'bg-pink-100 text-pink-700',
       'Unpaid Leave': 'bg-orange-100 text-orange-700',
       'Not Marked': 'bg-gray-100 text-gray-600',
     };
@@ -130,6 +132,9 @@ export default function Dashboard() {
         <StatCard title="Salary Payable (MTD)"   value={formatCurrency(totalSalaryPayable)} icon={IndianRupee} color="indigo" onClick={() => navigate('/salary')} />
         <StatCard title="Pending Advance"        value={formatCurrency(totalPendingAdvance)} icon={CreditCard} color="purple" onClick={() => navigate('/advances')} />
       </div>
+
+      <AttendanceAlerts activeEmployees={activeEmployees} attendance={attendance} settings={settings}
+        updateSettings={updateSettings} bulkSaveAttendance={bulkSaveAttendance} />
 
       {/* Charts + Today's Attendance */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

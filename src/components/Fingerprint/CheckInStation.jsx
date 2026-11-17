@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Fingerprint, Play, Square, CheckCircle2, AlertTriangle, XCircle, Clock } from 'lucide-react';
+import { Fingerprint, Play, Square, CheckCircle2, AlertTriangle, XCircle, Clock, Volume2, VolumeX } from 'lucide-react';
 import { fingerprintStatus, identifyFinger, cancelScan, describeError } from '../../utils/fingerprint.js';
+import { speak, voiceEnabled, setVoiceEnabled } from '../../utils/speech.js';
 
 export const nowTime = () => {
   const d = new Date();
@@ -16,12 +17,22 @@ const TONES = {
 
 // The fingerprint check-in screen: runs the scan loop and shows the outcome. What a match does
 // is up to the caller — `onMatch(employeeId, score)` records the check-in and resolves to the
-// message to show ({ tone, title, detail }). `checkIns` is today's list ({ employeeId, name,
-// checkIn, status }).
+// message to show ({ tone, title, detail, say }); `say` is spoken aloud. `checkIns` is today's list ({ employeeId, name,
+// checkIn, checkOut, late, status }).
 export default function CheckInStation({ onMatch, checkIns, enrolHint }) {
   const [service, setService] = useState(null); // status payload, or { ok: false }
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState(null);   // { tone, title, detail }
+  const [result, setResult] = useState(null);   // { tone, title, detail, say }
+  const [voice, setVoice] = useState(voiceEnabled);
+
+  const show = (r) => {
+    setResult(r);
+    speak(r.say);
+  };
+  const toggleVoice = () => {
+    setVoiceEnabled(!voice);
+    setVoice(!voice);
+  };
 
   // The scan loop outlives renders, so it calls the latest onMatch through a ref.
   const onMatchRef = useRef(onMatch);
@@ -44,16 +55,16 @@ export default function CheckInStation({ onMatch, checkIns, enrolHint }) {
       if (res.ok) {
         if (res.employeeId) {
           try {
-            setResult(await onMatchRef.current(res.employeeId, res.score));
+            show(await onMatchRef.current(res.employeeId, res.score));
           } catch {
-            setResult({ tone: 'error', title: 'Could not save the check-in', detail: 'Check the internet connection and press again.' });
+            show({ tone: 'error', title: 'Could not save the check-in', detail: 'Check the internet connection and press again.', say: 'Could not save. Please press again.' });
           }
         } else if (res.tentative) {
           tentative = res.tentative;
-          setResult({ tone: 'info', title: 'Almost — press once more', detail: 'Lift your finger and press it flat again to confirm.' });
-        } else setResult({ tone: 'error', title: 'Not recognised', detail: 'Lift your finger and press it flat again, or ask to be enrolled.' });
+          show({ tone: 'info', title: 'Almost — press once more', detail: 'Lift your finger and press it flat again to confirm.', say: 'Press once more.' });
+        } else show({ tone: 'error', title: 'Not recognised', detail: 'Lift your finger and press it flat again, or ask to be enrolled.', say: 'Not recognised. Please try again.' });
       } else if (res.error === 'poor_quality') {
-        setResult({ tone: 'warn', title: 'Press more firmly', detail: describeError(res.error) });
+        show({ tone: 'warn', title: 'Press more firmly', detail: describeError(res.error), say: 'Press more firmly.' });
       } else if (res.error !== 'timeout') {
         if (res.error !== 'cancelled') setResult({ tone: 'error', title: 'Scanner problem', detail: describeError(res.error) });
         break;
@@ -87,6 +98,11 @@ export default function CheckInStation({ onMatch, checkIns, enrolHint }) {
                 : `${enrolledCount} employee${enrolledCount === 1 ? '' : 's'} enrolled.${enrolHint ? ` ${enrolHint}` : ''}`}
             </p>
           </div>
+          <div className="flex items-center gap-2">
+          <button onClick={toggleVoice} title={voice ? 'Voice on — click to mute' : 'Voice off — click to turn on'}
+            className="p-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
+            {voice ? <Volume2 size={16} /> : <VolumeX size={16} />}
+          </button>
           {running ? (
             <button onClick={stop} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gray-800 text-white text-sm rounded-lg hover:bg-gray-900">
               <Square size={16} /> Stop
@@ -100,6 +116,7 @@ export default function CheckInStation({ onMatch, checkIns, enrolHint }) {
               <Play size={16} /> Start check-in
             </button>
           )}
+          </div>
         </div>
 
         {offline && (
@@ -126,7 +143,7 @@ export default function CheckInStation({ onMatch, checkIns, enrolHint }) {
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-800">Today's check-ins</h3>
+          <h3 className="text-sm font-semibold text-gray-800">Today's check-ins <span className="font-normal text-gray-400">· scan again later to check out</span></h3>
           <span className="text-xs text-gray-400">{checkIns.length}</span>
         </div>
         {checkIns.length === 0 ? (
@@ -136,7 +153,11 @@ export default function CheckInStation({ onMatch, checkIns, enrolHint }) {
             {checkIns.map((a) => (
               <li key={a.employeeId} className="px-4 py-2.5 flex items-center justify-between text-sm">
                 <span className="font-medium text-gray-800">{a.name}</span>
-                <span className="text-gray-500 tabular-nums">{a.checkIn} · {a.status}</span>
+                <span className="text-gray-500 tabular-nums">
+                  {a.checkIn}{a.checkOut ? ` – ${a.checkOut}` : ''}
+                  {a.late && <span className="ml-1.5 px-1 rounded bg-amber-100 text-amber-700 text-[10px] font-semibold">LATE</span>}
+                  {' · '}{a.status}
+                </span>
               </li>
             ))}
           </ul>

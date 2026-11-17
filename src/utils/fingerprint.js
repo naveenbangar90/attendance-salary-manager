@@ -42,12 +42,3 @@ export function describeError(error) {
     default: return error || 'Unknown error';
   }
 }
-
-// Mark an employee present from a fingerprint check-in. A manually marked status for the day is
-// kept (Half Day, Overtime…) except Absent, which the check-in proves wrong; the first
-// check-in time of the day is never overwritten.
-export function checkInRecord(existing, employeeId, date, time) {
-  if (existing?.checkIn) return null;
-  const status = !existing || existing.status === 'Absent' ? 'Present' : existing.status;
-  return { employeeId, date, status, checkIn: time };
-}

@@ -3,6 +3,7 @@ import { Building2, LogOut } from 'lucide-react';
 import CheckInStation, { nowTime } from '../Fingerprint/CheckInStation.jsx';
 import { todayStr } from '../../utils/calculations.js';
 import { kioskToday, kioskCheckIn, signOut } from '../../utils/remoteSync.js';
+import { scanMessage } from '../Fingerprint/scanMessage.js';
 
 const REFRESH_MS = 60000;
 
@@ -27,10 +28,8 @@ export default function KioskApp({ user }) {
     if (res.status === 401) window.location.reload();
     if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
     load();
-    const { result, name, checkIn, status } = res.body;
-    if (result === 'checked_in') return { tone: 'ok', title: `Welcome, ${name}`, detail: `Checked in at ${checkIn} · ${status} · match score ${Math.round(score)}` };
-    if (result === 'already') return { tone: 'info', title: `${name}, you're already checked in`, detail: `Checked in at ${checkIn}` };
-    return { tone: 'warn', title: 'Fingerprint belongs to an inactive or deleted employee', detail: name };
+    // The server sends this employee's shift times along with the result.
+    return scanMessage(res.body.result, res.body, res.body, score);
   };
 
   const out = async () => { if (await signOut()) window.location.reload(); };

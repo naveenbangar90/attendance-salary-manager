@@ -13,10 +13,12 @@
 //     otherwise leave two days standing.
 export const SALARY_DAYS = 30;
 
+import { latePenalty } from './attendanceRules.js';
+
 // Returns attendance breakdown for an array of attendance records
 export const getAttendanceStats = (records, settings) => {
   let presentDays = 0, halfDays = 0, paidLeaveDays = 0,
-    absentDays = 0, unpaidLeaveDays = 0, weeklyOffDays = 0,
+    absentDays = 0, unpaidLeaveDays = 0, weeklyOffDays = 0, holidayDays = 0,
     overtimeHours = 0, lateFineTotal = 0;
   const absentDates = [];
   const unpaidLeaveDates = [];
@@ -30,6 +32,7 @@ export const getAttendanceStats = (records, settings) => {
       case 'Half Day':     halfDays++;       break;
       case 'Paid Leave':   paidLeaveDays++;  break;
       case 'Weekly Off':   weeklyOffDays++;  break;
+      case 'Holiday':      holidayDays++;    break;
       case 'Absent':       absentDays++;     absentDates.push(r.date); break;
       case 'Unpaid Leave': unpaidLeaveDays++; unpaidLeaveDates.push(r.date); break;
       default: break;
@@ -38,16 +41,20 @@ export const getAttendanceStats = (records, settings) => {
     lateFineTotal  += parseFloat(r.lateFine || 0);
   });
 
-  // The only thing that reduces pay. Present / Overtime / Paid Leave / Weekly Off all
+  // Every N late check-ins in the month cost half a day (attendanceRules.js).
+  const { lateDays, latePenaltyDays } = latePenalty(records, settings);
+
+  // The only thing that reduces pay. Present / Overtime / Paid Leave / Weekly Off / Holiday all
   // deduct nothing, so they never appear here.
-  const deductionDays = round2(absentDays + halfDays * 0.5 + unpaidLeaveDays);
+  const deductionDays = round2(absentDays + halfDays * 0.5 + unpaidLeaveDays + latePenaltyDays);
 
   absentDates.sort();
   unpaidLeaveDates.sort();
 
   return {
     presentDays, halfDays, paidLeaveDays,
-    absentDays, unpaidLeaveDays, weeklyOffDays,
+    absentDays, unpaidLeaveDays, weeklyOffDays, holidayDays,
+    lateDays, latePenaltyDays,
     overtimeHours, lateFineTotal, deductionDays,
     absentDates, unpaidLeaveDates,
   };

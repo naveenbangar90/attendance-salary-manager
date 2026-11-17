@@ -7,7 +7,8 @@
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import pg from 'pg';
-import { checkInRecord } from '../src/utils/fingerprint.js';
+import { applyScan, rulesOf, runDailyRules, timesFor } from '../src/utils/attendanceRules.js';
+import { shiftDateStr } from '../src/utils/calculations.js';
 
 const scrypt = promisify(scryptCb);
 
@@ -51,8 +52,14 @@ export async function initApi() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL
     );
+    CREATE TABLE IF NOT EXISTS rule_runs (
+      date    TEXT PRIMARY KEY,
+      summary JSONB NOT NULL,
+      ran_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
   await pool.query('DELETE FROM sessions WHERE expires_at < now()');
+  startDailyRules();
   return true;
 }
 
@@ -296,7 +303,10 @@ async function kioskToday(req, res) {
     employees: employees.filter((e) => e.status === 'Active').map((e) => ({ id: e.id, name: e.name, employeeCode: e.employeeCode })),
     checkIns: attendance
       .filter((a) => a.date === date && a.checkIn)
-      .map((a) => ({ employeeId: a.employeeId, name: byId.get(a.employeeId)?.name || 'Unknown', checkIn: a.checkIn, status: a.status })),
+      .map((a) => ({
+        employeeId: a.employeeId, name: byId.get(a.employeeId)?.name || 'Unknown',
+        checkIn: a.checkIn, checkOut: a.checkOut || '', late: !!a.late, status: a.status,
+      })),
   });
 }
 
@@ -318,13 +328,16 @@ async function kioskCheckIn(req, res, user) {
     const attendance = data || [];
     const idx = attendance.findIndex((a) => a.employeeId === employeeId && a.date === date);
     const existing = idx >= 0 ? attendance[idx] : undefined;
-    const rec = checkInRecord(existing, employeeId, date, time);
-    if (!rec) {
+    const settings = (await readCollection(client, 'asm_settings')).data || {};
+    const { kind, patch } = applyScan(existing, emp, date, time, settings);
+    // This employee's shift times, for the station's messages ("late after 9:15").
+    const times = timesFor(emp, rulesOf(settings));
+    if (!patch) {
       await client.query('ROLLBACK');
-      return send(res, 200, { result: 'already', name: emp.name, checkIn: existing.checkIn, status: existing.status });
+      return send(res, 200, { result: kind, name: emp.name, checkIn: existing.checkIn, status: existing.status, ...times });
     }
     const merged = {
-      ...existing, ...rec,
+      ...existing, ...patch,
       id: existing?.id || `${Date.now().toString(36)}_k`,
       createdAt: existing?.createdAt || new Date().toISOString(),
     };
@@ -337,13 +350,91 @@ async function kioskCheckIn(req, res, user) {
         ['asm_attendance', value, user.id]);
     }
     await client.query('COMMIT');
-    send(res, 200, { result: 'checked_in', name: emp.name, checkIn: merged.checkIn, status: merged.status });
+    send(res, 200, {
+      result: kind, name: emp.name, checkIn: merged.checkIn, checkOut: merged.checkOut || '',
+      late: !!merged.late, earlyLeave: !!merged.earlyLeave, status: merged.status, ...times,
+    });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
   } finally {
     client.release();
   }
+}
+
+// ── Daily rules (auto-absent, weekly off, holidays, sandwich) ────────────────
+// Every few minutes: each day whose auto-absent time has passed is run once (rule_runs records
+// it), so a restart or a missed tick catches up — but only back to the first day this server ever
+// ran the rules, so switching them on never rewrites older months.
+
+const BUSINESS_TZ = process.env.BUSINESS_TZ || 'Asia/Kolkata';
+const RULES_EVERY_MS = 5 * 60 * 1000;
+const CATCH_UP_DAYS = 6;
+
+function businessNow() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BUSINESS_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const get = (t) => parts.find((p) => p.type === t).value;
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` };
+}
+
+async function runRulesFor(date) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const att = await readCollection(client, 'asm_attendance', true);
+    // Claim the day; if another run already did it, stop.
+    const claimed = await client.query(
+      `INSERT INTO rule_runs (date, summary) VALUES ($1, '{}') ON CONFLICT (date) DO NOTHING RETURNING date`, [date]);
+    if (!claimed.rows.length) return client.query('ROLLBACK');
+    const employees = (await readCollection(client, 'asm_employees')).data || [];
+    const settings = (await readCollection(client, 'asm_settings')).data || {};
+    const { attendance, summary } = runDailyRules(date, { employees, attendance: att.data || [], settings });
+    if (attendance) {
+      const value = JSON.stringify(attendance);
+      if (att.version === 0) await client.query('INSERT INTO app_data (key, value, version) VALUES ($1, $2, 1)', ['asm_attendance', value]);
+      else await client.query('UPDATE app_data SET value = $2, version = version + 1, updated_at = now(), updated_by = NULL WHERE key = $1', ['asm_attendance', value]);
+    }
+    await client.query('UPDATE rule_runs SET summary = $2 WHERE date = $1', [date, JSON.stringify(summary)]);
+    await client.query('COMMIT');
+    console.log(`Attendance rules for ${date}: ${summary.absent.length} absent, ${summary.weeklyOff.length} weekly off, `
+      + `${summary.holiday.length} holiday, ${summary.sandwich.length} sandwich${summary.skipped ? ` (${summary.skipped})` : ''}`);
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+async function dailyRulesTick() {
+  const now = businessNow();
+  const settings = (await readCollection(pool, 'asm_settings')).data || {};
+  const cutoffPassed = now.time >= rulesOf(settings).absentAfter;
+  const latestDue = cutoffPassed ? now.date : shiftDateStr(now.date, -1);
+  const { rows } = await pool.query('SELECT min(date) AS first FROM rule_runs');
+  if (!rows[0].first) {
+    // First ever run: start from the next day that is due, never from the past.
+    await pool.query(`INSERT INTO rule_runs (date, summary) VALUES ($1, '{"skipped":"before_start"}') ON CONFLICT DO NOTHING`, [latestDue]);
+    return;
+  }
+  for (let i = CATCH_UP_DAYS; i >= 0; i--) {
+    const date = shiftDateStr(latestDue, -i);
+    if (date < rows[0].first) continue;
+    await runRulesFor(date);
+  }
+}
+
+function startDailyRules() {
+  const tick = () => dailyRulesTick().catch((e) => console.error('Attendance rules failed:', e));
+  tick();
+  setInterval(tick, RULES_EVERY_MS).unref();
+}
+
+async function ruleRuns(req, res) {
+  const { rows } = await pool.query('SELECT date, summary, ran_at FROM rule_runs ORDER BY date DESC LIMIT 14');
+  send(res, 200, { runs: rows });
 }
 
 // ── Owner data sync ──────────────────────────────────────────────────────────
@@ -414,6 +505,7 @@ export async function handleApi(req, res, urlPath) {
     if (user.role !== OWNER) return send(res, 403, { error: 'forbidden' }), true;
     if (req.method === 'GET' && urlPath === '/api/data') return await getData(req, res), true;
     if (req.method === 'GET' && urlPath === '/api/versions') return await getVersions(req, res), true;
+    if (req.method === 'GET' && urlPath === '/api/rule-runs') return await ruleRuns(req, res), true;
     const m = urlPath.match(/^\/api\/data\/([^/]+)$/);
     if (req.method === 'GET' && m) return await getOne(req, res, decodeURIComponent(m[1])), true;
     if (req.method === 'PUT' && m) return await putData(req, res, user, decodeURIComponent(m[1])), true;

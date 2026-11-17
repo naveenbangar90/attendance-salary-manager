@@ -38,6 +38,8 @@ const buildSlipText = (report, companyName) => {
   if (report.absentDays > 0)      push(`• Absent: ${report.absentDays}`);
   if (report.unpaidLeaveDays > 0) push(`• Unpaid Leaves: ${report.unpaidLeaveDays}`);
   if (report.weeklyOffDays > 0)   push(`• Weekly Off: ${report.weeklyOffDays}`);
+  if (report.holidayDays > 0)     push(`• Holidays: ${report.holidayDays}`);
+  if (report.lateDays > 0)        push(`• Late Marks: ${report.lateDays}${report.latePenaltyDays > 0 ? ` (− ${report.latePenaltyDays} day)` : ''}`);
   push(`• Deduction Days: ${report.deductionDays}`);
   push(`• Paid Days: ${report.paidDays.toFixed(1)}`);
   if (report.absentDates && report.absentDates.length > 0) {
@@ -97,10 +99,12 @@ function SalarySlip({ report, settings, companyName }) {
             ['Salary Days in Month', report.entitledDays],
             ['Present Days', report.presentDays],
             ['Weekly Off', report.weeklyOffDays],
+            ...(report.holidayDays > 0 ? [['Holidays', report.holidayDays]] : []),
             ['Paid Leaves', report.paidLeaveDays],
             ['Absent Days', report.absentDays],
             ['Half Days', report.halfDays],
             ['Unpaid Leaves', report.unpaidLeaveDays],
+            ...(report.lateDays > 0 ? [[`Late Marks (${report.latePenaltyDays} day deducted)`, report.lateDays]] : []),
             ['Less: Deduction Days', `− ${report.deductionDays}`],
             ['Total Paid Days', report.paidDays.toFixed(1)],
           ].map(([k, v]) => (
@@ -345,6 +349,7 @@ function EmployeeRow({ emp, advances, settings, month, report, adj, onAdjChange 
               ['Absent', report.absentDays],
               ['Unpaid Leaves', report.unpaidLeaveDays],
               ['Weekly Off', report.weeklyOffDays],
+              ['Late Marks', report.latePenaltyDays > 0 ? `${report.lateDays} (− ${report.latePenaltyDays})` : report.lateDays],
               ['OT Hours', report.overtimeHours],
               ['Gross Salary', formatCurrency(report.grossSalary)],
             ].map(([k, v]) => (

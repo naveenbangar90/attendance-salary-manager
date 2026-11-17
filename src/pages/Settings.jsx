@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import CheckinLogins from '../components/Auth/CheckinLogins.jsx';
 import { isOnline } from '../utils/remoteSync.js';
-import { Save, AlertTriangle, Database, Trash2, Settings as SettingsIcon, FileSpreadsheet, Mail, Cloud, ExternalLink, Loader2, Archive } from 'lucide-react';
+import { Save, AlertTriangle, Database, Trash2, Plus, Settings as SettingsIcon, FileSpreadsheet, Mail, Cloud, ExternalLink, Loader2, Archive } from 'lucide-react';
 import { getBackupV0 } from '../utils/storage.js';
+import { RULE_DEFAULTS } from '../utils/attendanceRules.js';
 import { buildLedger } from '../utils/ledger.js';
 import { useApp } from '../context/AppContext.jsx';
 import ConfirmDialog from '../components/Common/ConfirmDialog.jsx';
@@ -119,6 +120,146 @@ const buildExportSheets = ({ employees, attendance, advances, lacePackingRecords
     { name: 'Lace Balance', rows: laceBalanceSheet },
   ];
 };
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+const RulesCard = ({ title, children }) => (
+  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+    <h2 className="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-2">{title}</h2>
+    {children}
+  </div>
+);
+
+// Automatic attendance rules (attendanceRules.js). The daily auto-absent run happens on the online
+// server, so it only works in the hosted app.
+function AttendanceRules({ form, setForm }) {
+  const set = (field, value) => setForm((p) => ({ ...p, [field]: value }));
+  const holidays = form.holidays || [];
+  const setHolidays = (list) => set('holidays', list);
+  const [newHoliday, setNewHoliday] = useState({ date: '', name: '' });
+  const addHoliday = () => {
+    if (!newHoliday.date) return;
+    setHolidays([...holidays.filter((h) => h.date !== newHoliday.date), { date: newHoliday.date, name: newHoliday.name.trim() }]
+      .sort((a, b) => a.date.localeCompare(b.date)));
+    setNewHoliday({ date: '', name: '' });
+  };
+  const timeField = (field, label, help) => (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <input className={inp} type="time" value={form[field] || ''} onChange={(e) => e.target.value && set(field, e.target.value)} />
+      <p className="text-xs text-gray-400 mt-1">{help}</p>
+    </div>
+  );
+  const shifts = form.shifts?.length ? form.shifts : RULE_DEFAULTS.shifts;
+  const defaultShift = shifts.find((sh) => sh.id === form.defaultShiftId) || shifts[0];
+  const setShift = (id, patch) => set('shifts', shifts.map((sh) => (sh.id === id ? { ...sh, ...patch } : sh)));
+  const addShift = () => set('shifts', [...shifts, { id: `s${Date.now().toString(36)}`, start: '09:00', end: '18:00' }]);
+  const removeShift = (id) => set('shifts', shifts.filter((sh) => sh.id !== id));
+  const upcoming = holidays.filter((h) => h.date >= todayStr().slice(0, 4));
+
+  return (
+    <RulesCard title="Attendance Rules">
+      <div className="flex items-start gap-3">
+        <input type="checkbox" id="autoRules" checked={!!form.autoRules} onChange={(e) => set('autoRules', e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600" />
+        <div>
+          <label htmlFor="autoRules" className="text-sm font-medium text-gray-700 cursor-pointer">Apply attendance rules automatically</label>
+          <p className="text-xs text-gray-400">Late marks, check-out, auto-absent and the sandwich rule. Weekly offs and holidays always pre-fill the attendance grid.</p>
+        </div>
+      </div>
+
+      {form.autoRules && (
+        <div>
+          <p className="text-xs font-medium text-gray-600 mb-1">Shifts</p>
+          <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
+            {shifts.map((sh) => (
+              <li key={sh.id} className="px-3 py-2 flex flex-wrap items-center gap-2 text-sm">
+                <input className={`${inp} w-auto`} type="time" value={sh.start} aria-label="Shift start"
+                  onChange={(e) => e.target.value && setShift(sh.id, { start: e.target.value })} />
+                <span className="text-gray-400">to</span>
+                <input className={`${inp} w-auto`} type="time" value={sh.end} aria-label="Shift end"
+                  onChange={(e) => e.target.value && setShift(sh.id, { end: e.target.value })} />
+                <label className="flex items-center gap-1.5 text-xs text-gray-600 ml-auto cursor-pointer">
+                  <input type="radio" name="defaultShift" checked={defaultShift?.id === sh.id} onChange={() => set('defaultShiftId', sh.id)} />
+                  Default
+                </label>
+                <button type="button" title="Remove shift" disabled={shifts.length === 1} onClick={() => removeShift(sh.id)}
+                  className="p-1 rounded hover:bg-red-50 text-red-500 disabled:opacity-30"><Trash2 size={13} /></button>
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={addShift} className="mt-2 flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
+            <Plus size={13} /> Add shift
+          </button>
+          <p className="text-xs text-gray-400 mt-1">
+            Choose each person's shift on the Employees page; anyone not assigned works the default shift.
+            Checking out before the shift ends makes the day a Half Day.
+          </p>
+        </div>
+      )}
+
+      {form.autoRules && (
+        <div className="grid sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Late after (minutes)</label>
+            <input className={inp} type="number" min="0" max="120" value={form.lateGraceMin}
+              onChange={(e) => set('lateGraceMin', Math.max(0, parseInt(e.target.value, 10) || 0))} />
+            <p className="text-xs text-gray-400 mt-1">A check-in this many minutes after the shift starts is marked late.</p>
+          </div>
+          {timeField('absentAfter', 'Absent if no scan by', 'Anyone who has not scanned by this time is marked Absent.')}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Late marks per half-day cut</label>
+            <input className={inp} type="number" min="0" max="31" value={form.latesPerHalfDay}
+              onChange={(e) => set('latesPerHalfDay', Math.max(0, parseInt(e.target.value, 10) || 0))} />
+            <p className="text-xs text-gray-400 mt-1">Every this many late marks in a month deduct half a day. 0 = never.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid sm:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Weekly off</label>
+          <select className={inp} value={form.weeklyOffDay === '' || form.weeklyOffDay == null ? '' : String(form.weeklyOffDay)}
+            onChange={(e) => set('weeklyOffDay', e.target.value === '' ? '' : Number(e.target.value))}>
+            {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+            <option value="">No common weekly off</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-1">Change it for one person on the Employees page.</p>
+        </div>
+        <div className="sm:col-span-2 flex items-start gap-3 sm:pt-6">
+          <input type="checkbox" id="sandwichRule" checked={!!form.sandwichRule} onChange={(e) => set('sandwichRule', e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600" />
+          <div>
+            <label htmlFor="sandwichRule" className="text-sm font-medium text-gray-700 cursor-pointer">Sandwich rule</label>
+            <p className="text-xs text-gray-400">Absent on the working days both before and after a weekly off or holiday makes the off days Absent too.</p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-medium text-gray-600 mb-1">Holidays</p>
+        {upcoming.length > 0 && (
+          <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg mb-2">
+            {upcoming.map((h) => (
+              <li key={h.date} className="px-3 py-1.5 text-sm flex items-center justify-between">
+                <span><span className="tabular-nums text-gray-500 mr-2">{h.date}</span>{h.name || 'Holiday'}</span>
+                <button type="button" title="Remove holiday" onClick={() => setHolidays(holidays.filter((x) => x.date !== h.date))}
+                  className="p-1 rounded hover:bg-red-50 text-red-500"><Trash2 size={13} /></button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="grid sm:grid-cols-[auto_1fr_auto] gap-2">
+          <input className={inp} type="date" value={newHoliday.date} onChange={(e) => setNewHoliday((p) => ({ ...p, date: e.target.value }))} />
+          <input className={inp} placeholder="Name, e.g. Diwali" value={newHoliday.name} onChange={(e) => setNewHoliday((p) => ({ ...p, name: e.target.value }))} />
+          <button type="button" onClick={addHoliday} disabled={!newHoliday.date}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-40">
+            <Plus size={14} /> Add
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mt-1">Holidays are paid and never marked absent. Remember to click Save Settings.</p>
+      </div>
+    </RulesCard>
+  );
+}
 
 export default function Settings() {
   const { settings, updateSettings, loadSampleData, clearAllData,
@@ -273,7 +414,8 @@ export default function Settings() {
           </p>
           <ul className="list-disc pl-4 space-y-0.5 text-blue-800">
             <li>Weekly offs and paid leave sit inside the {form.totalWorkingDays || 30} — they never reduce pay.</li>
-            <li>A day left unmarked is not an absence, so it is paid. Only marked absences cut salary.</li>
+            <li>A day left unmarked is not an absence, so it is paid. Only marked absences cut salary — with the automatic rules on, anyone who hasn't scanned by {form.absentAfter} is marked Absent.</li>
+            {form.autoRules && Number(form.latesPerHalfDay) > 0 && <li>Every {form.latesPerHalfDay} late marks in a month deduct half a day.</li>}
             <li>Absent every day of the month pays nothing, February included.</li>
             <li>Joining or leaving mid-month pro-rates the {form.totalWorkingDays || 30} to the days employed.</li>
           </ul>
@@ -311,6 +453,8 @@ export default function Settings() {
           </div>
         )}
       </Section>
+
+      <AttendanceRules form={form} setForm={(fn) => { setForm(fn); setSaved(false); }} />
 
       <div className="flex gap-3">
         <button type="submit" className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium text-white transition-colors ${saved ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-700'}`}>

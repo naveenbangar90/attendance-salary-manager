@@ -7,11 +7,14 @@ import { fingerprintStatus, removeFingerprint } from '../utils/fingerprint.js';
 import ConfirmDialog from '../components/Common/ConfirmDialog.jsx';
 import EmptyState from '../components/Common/EmptyState.jsx';
 import { formatCurrency } from '../utils/calculations.js';
+import { rulesOf, shiftOf, shiftLabel } from '../utils/attendanceRules.js';
 
+const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const EMPTY_FORM = { employeeCode: '', name: '', mobile: '', role: '', monthlySalary: '', joiningDate: '', leftDate: '', status: 'Active' };
 
 function EmployeeForm({ initial = EMPTY_FORM, onSave, onCancel, settings }) {
   const [form, setForm] = useState(initial);
+  const rules = rulesOf(settings);
   const F = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
 
   const dailySalary = form.monthlySalary
@@ -62,6 +65,21 @@ function EmployeeForm({ initial = EMPTY_FORM, onSave, onCancel, settings }) {
           <select className={inputCls} value={form.status} onChange={F('status')}>
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Shift</label>
+          <select className={inputCls} value={form.shiftId ?? ''} onChange={F('shiftId')}>
+            <option value="">Default shift ({shiftLabel(shiftOf(null, rules))})</option>
+            {rules.shifts.map((sh) => <option key={sh.id} value={sh.id}>{shiftLabel(sh)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Weekly Off</label>
+          <select className={inputCls} value={form.weeklyOffDay ?? ''} onChange={F('weeklyOffDay')}>
+            <option value="">Company default{settings?.weeklyOffDay !== '' && settings?.weeklyOffDay != null ? ` (${WEEK_DAYS[settings.weeklyOffDay]})` : ''}</option>
+            {WEEK_DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+            <option value="none">No weekly off</option>
           </select>
         </div>
         {form.status === 'Inactive' && (
@@ -174,7 +192,10 @@ export default function Employees() {
                     <td className="px-4 py-3 font-mono text-xs text-gray-500">{emp.employeeCode}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{emp.name}</td>
                     <td className="px-4 py-3 text-gray-600">{emp.mobile}</td>
-                    <td className="px-4 py-3 text-gray-600">{emp.role}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {emp.role}
+                      <span className="block text-[11px] text-gray-400 whitespace-nowrap">{shiftLabel(shiftOf(emp, rulesOf(settings)))}</span>
+                    </td>
                     <td className="px-4 py-3 font-semibold text-gray-800">{formatCurrency(emp.monthlySalary)}</td>
                     <td className="px-4 py-3 text-gray-600">{formatCurrency(emp.monthlySalary / settings.totalWorkingDays)}</td>
                     <td className="px-4 py-3 text-gray-500">{emp.joiningDate}</td>
@@ -206,7 +227,7 @@ export default function Employees() {
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="font-semibold text-gray-900">{emp.name}</p>
-                    <p className="text-xs text-gray-400">{emp.employeeCode} · {emp.role}</p>
+                    <p className="text-xs text-gray-400">{emp.employeeCode} · {emp.role} · {shiftLabel(shiftOf(emp, rulesOf(settings)))}</p>
                     <p className="text-xs text-gray-500 mt-1">{emp.mobile}</p>
                   </div>
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${emp.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{emp.status}</span>

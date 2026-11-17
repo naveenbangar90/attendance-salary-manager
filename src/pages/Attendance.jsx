@@ -10,9 +10,10 @@ import {
   todayStr, currentMonthKey, getShortDayName, getDayOfWeek,
   shiftDateStr, getMonthDates, formatMonthLabel, getMonthDayStats,
 } from '../utils/calculations.js';
+import { rulesOf, offStatusFor, holidayOn, OFF_STATUSES } from '../utils/attendanceRules.js';
 
 // ─── Status vocabulary ───────────────────────────────────────────────────────
-// Every row in the active column starts pre-filled as Present (Weekly Off on Sundays), so
+// Every row in the active column starts pre-filled as Present (Weekly Off / Holiday on off days), so
 // only exceptions need touching. Pre-fills render dashed until saved, and the day banner
 // counts how many are still untouched.
 //
@@ -30,30 +31,35 @@ const STATUS = {
   'Weekly Off':   { code: 'W', label: 'Weekly Off',   cell: 'bg-purple-100 text-purple-800 border-purple-300', dot: 'bg-purple-500' },
   'Unpaid Leave': { code: 'U', label: 'Unpaid Leave', cell: 'bg-orange-100 text-orange-800 border-orange-300', dot: 'bg-orange-500' },
   'Overtime':     { code: 'O', label: 'Overtime',     cell: 'bg-indigo-100 text-indigo-800 border-indigo-300', dot: 'bg-indigo-500' },
+  'Holiday':      { code: 'F', label: 'Holiday',      cell: 'bg-pink-100   text-pink-800   border-pink-300',   dot: 'bg-pink-500'   },
 };
 const UNMARKED_CELL = 'bg-gray-50 text-gray-300 border-gray-200';
 
 // The five used every day get their own buttons; U and O live behind "more" but stay
 // fully reachable — both already participate in salary calculation.
 const QUICK = ['Present', 'Absent', 'Half Day', 'Paid Leave', 'Weekly Off'];
-const EXTRA = ['Unpaid Leave', 'Overtime'];
+const EXTRA = ['Unpaid Leave', 'Overtime', 'Holiday'];
 const ALL_STATUSES = [...QUICK, ...EXTRA];
 
 const codeOf = (s) => (s && STATUS[s] ? STATUS[s].code : '–');
 const cellClassOf = (s) => (s && STATUS[s] ? STATUS[s].cell : UNMARKED_CELL);
 
 // ─── Suggestion rule ─────────────────────────────────────────────────────────
-// Sundays pre-select Weekly Off, except for someone marked Absent on the adjacent
-// Saturday or Monday, who pre-selects Absent. A suggestion renders OUTLINED rather than
-// filled so it is visibly unconfirmed until the user saves.
-const suggestFor = (date, empId, attendance) => {
-  if (getDayOfWeek(date) !== 0) return UNMARKED;
-  const sat = shiftDateStr(date, -1);
-  const mon = shiftDateStr(date, 1);
-  const adjacentAbsent = attendance.some(
-    (a) => a.employeeId === empId && (a.date === sat || a.date === mon) && a.status === 'Absent'
-  );
-  return adjacentAbsent ? 'Absent' : 'Weekly Off';
+// The employee's weekly off and company holidays pre-select Weekly Off / Holiday — or Absent
+// under the sandwich rule, when the working days on both sides of the off days are Absent.
+// A suggestion renders OUTLINED rather than filled so it is visibly unconfirmed until saved.
+const suggestFor = (date, emp, attendance, rules) => {
+  const off = offStatusFor(emp, date, rules);
+  if (!off || !rules.sandwichRule) return off || UNMARKED;
+  const statusOn = (d) => attendance.find((a) => a.employeeId === emp.id && a.date === d)?.status
+    ?? offStatusFor(emp, d, rules);
+  // Step outward over neighbouring off days to the working day on each side.
+  const edge = (step) => {
+    let d = shiftDateStr(date, step);
+    for (let i = 0; i < 7 && OFF_STATUSES.includes(statusOn(d)); i++) d = shiftDateStr(d, step);
+    return statusOn(d);
+  };
+  return edge(-1) === 'Absent' && edge(1) === 'Absent' ? 'Absent' : off;
 };
 
 // ─── Status picker shared by the desktop active column and the mobile list ───
@@ -124,11 +130,18 @@ function StatusPicker({ value, isSuggestion, onPick, onClear }) {
 // Extra per-day inputs, shown only where they are relevant.
 function DayExtras({ rec, settings, onChange, compact }) {
   const showOt = settings.overtimeEnabled && (rec.status === 'Overtime' || rec.status === 'Present' || rec.overtimeHours);
-  const showFine = settings.lateFineEnabled && rec.status && rec.status !== 'Weekly Off';
+  const showFine = settings.lateFineEnabled && rec.status && !OFF_STATUSES.includes(rec.status);
   if (!showOt && !showFine && !rec.status) return null;
+  const times = rec.checkIn && `In ${rec.checkIn}${rec.checkOut ? ` · Out ${rec.checkOut}` : ''}`;
   const inp = 'border border-gray-300 rounded px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400';
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${compact ? '' : 'mt-1.5'}`}>
+      {(times || rec.late) && (
+        <span className="text-[10px] text-gray-500 whitespace-nowrap">
+          {times}{rec.late && <span className="ml-1 px-1 rounded bg-amber-100 text-amber-700 font-semibold">LATE</span>}
+          {rec.earlyLeave && <span className="ml-1 px-1 rounded bg-amber-100 text-amber-700 font-semibold">LEFT EARLY</span>}
+        </span>
+      )}
       {showOt && (
         <label className="flex items-center gap-1 text-[10px] text-gray-500">
           OT
@@ -169,6 +182,7 @@ export default function Attendance() {
   const [historyMonth, setHistoryMonth] = useState(currentMonthKey());
 
   const today = todayStr();
+  const rules = useMemo(() => rulesOf(settings), [settings]);
   const activeEmployees = useMemo(() => employees.filter((e) => e.status === 'Active'), [employees]);
   const dates = useMemo(() => getMonthDates(month), [month]);
 
@@ -218,12 +232,13 @@ export default function Attendance() {
         next[emp.id] = {
           status: saved.status || UNMARKED, suggested: false,
           overtimeHours: saved.overtimeHours || '', lateFine: saved.lateFine || '', remarks: saved.remarks || '',
+          checkIn: saved.checkIn, checkOut: saved.checkOut, late: saved.late, earlyLeave: saved.earlyLeave,
         };
       } else {
         // Everyone starts Present — the normal case — so only the exceptions need touching.
-        // Sundays still default to Weekly Off (or Absent next to an adjacent absence).
+        // Weekly offs and holidays default to those (or Absent under the sandwich rule).
         // These are pre-fills, not confirmations, so they render dashed until saved.
-        const s = suggestFor(activeDate, emp.id, attendance) || 'Present';
+        const s = suggestFor(activeDate, emp, attendance, rules) || 'Present';
         next[emp.id] = { status: s, suggested: true, overtimeHours: '', lateFine: '', remarks: '' };
       }
     });
@@ -405,6 +420,11 @@ export default function Attendance() {
               </span>
               {getDayOfWeek(activeDate) === 0 && (
                 <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded">SUNDAY</span>
+              )}
+              {holidayOn(activeDate, rules) && (
+                <span className="px-1.5 py-0.5 bg-pink-100 text-pink-700 text-[10px] font-semibold rounded uppercase">
+                  {holidayOn(activeDate, rules).name || 'Holiday'}
+                </span>
               )}
               <span className="text-xs text-blue-700">
                 {draftStats.marked} to save

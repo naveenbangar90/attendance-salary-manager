@@ -1,4 +1,5 @@
 import { queueWrite } from './remoteSync.js';
+import { RULE_DEFAULTS } from './attendanceRules.js';
 
 const KEYS = {
   EMPLOYEES: 'asm_employees',
@@ -45,6 +46,8 @@ export const DEFAULT_SETTINGS = {
   defaultLateFineAmount: 0,
   googleClientId: '',
   googleDriveFolderId: '',
+  // Automatic attendance rules (late mark, check-out, auto-absent, weekly off, holidays).
+  ...RULE_DEFAULTS,
 };
 
 export const getEmployees = () => get(KEYS.EMPLOYEES, []);
